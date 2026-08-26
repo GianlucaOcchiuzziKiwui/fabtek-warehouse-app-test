@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import { clearRequestFlowStorage } from "@/lib/domain/requests/flow-storage";
 import { createClient } from "@/lib/supabase/client";
 import { LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -14,6 +15,17 @@ export function LogoutButton() {
   const logout = async () => {
     setError(null);
     setIsLoading(true);
+
+    try {
+      clearRequestFlowStorage(localStorage);
+    } catch {
+      // Continue signing out even when browser storage is unavailable.
+    }
+    try {
+      clearRequestFlowStorage(sessionStorage);
+    } catch {
+      // Continue signing out even when browser storage is unavailable.
+    }
 
     try {
       const supabase = createClient();

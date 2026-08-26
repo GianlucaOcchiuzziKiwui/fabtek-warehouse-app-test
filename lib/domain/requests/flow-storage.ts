@@ -5,12 +5,18 @@ import {
 } from "./attempt-state.ts";
 import {
   parsePersistedRequestDraft,
+  requestDraftReducer,
   type RequestDraft,
 } from "./draft.ts";
 import type { SubmitRequestInput } from "./contracts.ts";
 import { validateSubmitRequest } from "./validation.ts";
 
-const FLOW_VERSION = 1;
+const FLOW_VERSION = 2;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const REQUEST_FLOW_STORAGE_PREFIX = "fabtek:material-request-flow:v2:";
+const LEGACY_REQUEST_FLOW_STORAGE_PREFIX = "fabtek:material-request-flow:";
+const LEGACY_REQUEST_DRAFT_STORAGE_KEY = "fabtek:material-request-draft:v1";
+const FLOW_FIELDS = new Set(["version", "ownerId", "draft", "attempt"]);
 const ATTEMPT_FIELDS = new Set([
   "clientRequestId",
   "project",
@@ -26,6 +32,12 @@ export type RestoredRequestFlow = {
   attemptState: RequestAttemptState;
 };
 
+type RequestFlowStorage = {
+  readonly length: number;
+  key: (index: number) => string | null;
+  removeItem: (key: string) => void;
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -33,6 +45,43 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function hasOnlyFields(value: Record<string, unknown>, fields: Set<string>) {
   return Object.keys(value).every((key) => fields.has(key))
     && Object.keys(value).length === fields.size;
+}
+
+function normalizeOwnerId(ownerId: unknown) {
+  return typeof ownerId === "string" && UUID_PATTERN.test(ownerId)
+    ? ownerId.toLowerCase()
+    : null;
+}
+
+export function getRequestFlowStorageKey(ownerId: string) {
+  const normalizedOwnerId = normalizeOwnerId(ownerId);
+  if (!normalizedOwnerId) throw new Error("Invalid request-flow owner.");
+  return `${REQUEST_FLOW_STORAGE_PREFIX}${normalizedOwnerId}`;
+}
+
+export function clearRequestFlowStorage(storage: RequestFlowStorage) {
+  const keys: string[] = [];
+  try {
+    for (let index = 0; index < storage.length; index += 1) {
+      const key = storage.key(index);
+      if (
+        key?.startsWith(LEGACY_REQUEST_FLOW_STORAGE_PREFIX)
+        || key === LEGACY_REQUEST_DRAFT_STORAGE_KEY
+      ) {
+        keys.push(key);
+      }
+    }
+  } catch {
+    return;
+  }
+
+  for (const key of keys) {
+    try {
+      storage.removeItem(key);
+    } catch {
+      // Continue clearing the remaining scoped keys on best effort.
+    }
+  }
 }
 
 function samePayload(left: SubmitRequestInput, right: SubmitRequestInput) {
@@ -96,7 +145,10 @@ function blockedFlow(
 export function serializeRequestFlow(
   draft: RequestDraft,
   attemptState: RequestAttemptState,
+  ownerId: string,
 ) {
+  const normalizedOwnerId = normalizeOwnerId(ownerId);
+  if (!normalizedOwnerId) throw new Error("Invalid request-flow owner.");
   const attempt = attemptState.phase === "idle"
     ? null
     : attemptState.phase === "blocked"
@@ -114,17 +166,32 @@ export function serializeRequestFlow(
             : undefined,
         };
 
-  return JSON.stringify({ version: FLOW_VERSION, draft, attempt });
+  return JSON.stringify({
+    version: FLOW_VERSION,
+    ownerId: normalizedOwnerId,
+    draft,
+    attempt,
+  });
 }
 
 export function parsePersistedRequestFlow(
   snapshot: string | null,
+  ownerId: string,
 ): RestoredRequestFlow | null {
   if (!snapshot) return null;
 
   try {
     const value: unknown = JSON.parse(snapshot);
-    if (!isRecord(value) || value.version !== FLOW_VERSION) return null;
+    const normalizedOwnerId = normalizeOwnerId(ownerId);
+    if (
+      !normalizedOwnerId
+      || !isRecord(value)
+      || !hasOnlyFields(value, FLOW_FIELDS)
+      || value.version !== FLOW_VERSION
+      || normalizeOwnerId(value.ownerId) !== normalizedOwnerId
+    ) {
+      return null;
+    }
 
     const draft = parsePersistedRequestDraft(JSON.stringify(value.draft));
     if (!draft) return null;
@@ -173,4 +240,28 @@ export function parsePersistedRequestFlow(
   } catch {
     return null;
   }
+}
+
+export function recoverBlockedRequestFlow(
+  draft: RequestDraft,
+  attemptState: RequestAttemptState,
+  clientRequestId: string,
+): RestoredRequestFlow | null {
+  if (
+    attemptState.phase !== "blocked"
+    || clientRequestId === draft.clientRequestId
+  ) {
+    return null;
+  }
+
+  const recoveredDraft = requestDraftReducer(draft, {
+    type: "renew-client-request-id",
+    clientRequestId,
+  });
+  if (recoveredDraft === draft) return null;
+
+  return {
+    draft: recoveredDraft,
+    attemptState: IDLE_REQUEST_ATTEMPT,
+  };
 }

@@ -24,6 +24,7 @@ export type DraftAction =
   | { type: "set-quantity"; itemVariantId: string; quantity: number }
   | { type: "remove-line"; itemVariantId: string }
   | { type: "hydrate"; draft: RequestDraft }
+  | { type: "renew-client-request-id"; clientRequestId: string }
   | { type: "reset" };
 
 const DRAFT_VERSION = 1;
@@ -161,6 +162,10 @@ export function requestDraftReducer(
       };
     case "hydrate":
       return action.draft;
+    case "renew-client-request-id":
+      return isUuid(action.clientRequestId)
+        ? { ...draft, clientRequestId: action.clientRequestId }
+        : draft;
     case "reset":
       return createEmptyDraft();
   }

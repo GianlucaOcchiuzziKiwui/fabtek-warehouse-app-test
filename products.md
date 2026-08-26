@@ -173,7 +173,7 @@ La quantità parte sempre da `0` e deve essere un intero positivo. Se `track_inv
 - Il carrello non prenota la merce. L'invio crea richiesta e righe, congela `track_inventory` in `material_request_lines.snapshot_track_inventory`, assegna il progressivo e prenota in un'unica transazione soltanto le quantità delle varianti tracciate nello snapshot.
 - Se una quantità di una variante tracciata non è più disponibile, l'intera operazione fallisce senza creare una richiesta parziale e il client indica le righe da correggere.
 - Un `client_request_id` UUID, univoco per richiedente, rende l'invio idempotente e impedisce duplicati causati da doppio clic o retry di rete.
-- Browser e server legano la chiave al payload normalizzato completo: la bozza e un tentativo ambiguo sono salvati insieme in `localStorage`, il retry riusa gli stessi dati e un payload differente con la stessa chiave viene rifiutato indicando lo storico richieste.
+- Browser e server legano la chiave al payload normalizzato completo: la bozza e un tentativo ambiguo sono salvati insieme in `localStorage` sotto l'UUID del profilo autenticato, il retry riusa gli stessi dati e un payload differente con la stessa chiave viene rifiutato indicando lo storico richieste. Dopo aver verificato lo storico, solo un'azione esplicita e avvertita può conservare i contenuti della bozza generando una nuova chiave.
 - La richiesta creata ha stato iniziale `IN_PREPARAZIONE`.
 - Dopo l'invio, la richiesta non deve essere modificabile dal richiedente.
 

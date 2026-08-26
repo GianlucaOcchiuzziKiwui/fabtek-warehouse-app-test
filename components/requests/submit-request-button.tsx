@@ -22,11 +22,21 @@ export function SubmitRequestButton({ disabled }: { disabled: boolean }) {
     requestAttemptState,
     startSubmissionAttempt,
     replaceRequestAttemptState,
+    recoverBlockedRequest,
     isHydrated,
   } = useRequestDraft();
   const [isPending, startTransition] = useTransition();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const retryStatus = getRequestRetryStatus(requestAttemptState, draft.clientRequestId);
+  const blockedRecoveryWarningId = "blocked-request-recovery-warning";
+
+  function recoverBlocked() {
+    if (recoverBlockedRequest()) {
+      setErrorMessage(null);
+      return;
+    }
+    setErrorMessage("Non \u00e8 stato possibile preparare un nuovo tentativo.");
+  }
 
   function submit() {
     const started = startSubmissionAttempt({
@@ -115,13 +125,25 @@ export function SubmitRequestButton({ disabled }: { disabled: boolean }) {
         </p>
       ) : null}
       {retryStatus === "blocked" ? (
-        <div role="status" className="space-y-2 text-sm text-destructive">
-          <p>
+        <div className="space-y-2 text-sm text-destructive">
+          <p role="status">
             Questa bozza non pu\u00f2 riutilizzare in sicurezza la chiave di invio.
             Controlla nello storico se la richiesta \u00e8 gi\u00e0 stata registrata.
           </p>
           <Button asChild variant="outline">
             <Link href="/richieste">Apri storico richieste</Link>
+          </Button>
+          <p id={blockedRecoveryWarningId}>
+            Attenzione: dopo aver verificato lo storico, un nuovo tentativo
+            potrebbe creare una nuova richiesta mantenendo gli stessi contenuti.
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            aria-describedby={blockedRecoveryWarningId}
+            onClick={recoverBlocked}
+          >
+            Ho verificato lo storico: crea nuovo tentativo
           </Button>
         </div>
       ) : null}

@@ -135,6 +135,32 @@ test("resetting a draft starts a separate client request", () => {
   assert.deepEqual(reset.lines, []);
 });
 
+test("renewing a blocked draft key preserves its complete content", () => {
+  const initial = {
+    ...createEmptyDraft(),
+    clientRequestId: "10000000-0000-4000-8000-000000000001",
+    header: {
+      project: "P-21",
+      toolLine: "Linea A",
+      utilities: "Aria",
+      notes: "Urgente",
+    },
+    lines: [variantLine({ quantity: 3 })],
+  };
+  const renewed = requestDraftReducer(initial, {
+    type: "renew-client-request-id",
+    clientRequestId: "10000000-0000-4000-8000-000000000002",
+  });
+
+  assert.equal(renewed.clientRequestId, "10000000-0000-4000-8000-000000000002");
+  assert.deepEqual(renewed.header, initial.header);
+  assert.deepEqual(renewed.lines, initial.lines);
+  assert.equal(requestDraftReducer(initial, {
+    type: "renew-client-request-id",
+    clientRequestId: "not-a-uuid",
+  }), initial);
+});
+
 test("rejects persisted snapshots with an unsupported version or malformed lines", () => {
   const valid = createEmptyDraft();
 

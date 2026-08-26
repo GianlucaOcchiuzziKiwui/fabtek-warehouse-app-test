@@ -23,6 +23,9 @@ test("request retries expose the locked original payload and retry guidance", as
   assert.match(source, /Ritenta stessa richiesta/u);
   assert.match(source, /stessi dati del primo tentativo/u);
   assert.match(source, /href="\/richieste"/u);
+  assert.match(source, /aria-describedby=\{blockedRecoveryWarningId\}/u);
+  assert.match(source, /Ho verificato lo storico/u);
+  assert.match(source, /potrebbe creare una nuova richiesta/u);
 });
 
 test("request text inputs do not use UTF-16 maxLength limits", async () => {

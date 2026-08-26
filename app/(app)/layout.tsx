@@ -13,7 +13,7 @@ async function AuthenticatedApp({ children }: { children: React.ReactNode }) {
 
   return (
     <ProfileProvider profile={profile}>
-      <RequestDraftProvider>
+      <RequestDraftProvider key={profile.id} ownerId={profile.id}>
         <AppShell fullName={profile.full_name} isAdmin={isAdmin(profile)}>{children}</AppShell>
       </RequestDraftProvider>
     </ProfileProvider>

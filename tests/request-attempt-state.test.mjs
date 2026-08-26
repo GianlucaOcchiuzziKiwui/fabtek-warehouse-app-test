@@ -149,4 +149,5 @@ test("an idempotency payload mismatch blocks reuse and preserves recovery contex
   assert.equal(blocked.clientRequestId, CLIENT_REQUEST_ID);
   assert.deepEqual(blocked.attempt, started.attempt);
   assert.equal(getRequestRetryStatus(blocked, CLIENT_REQUEST_ID), "blocked");
+  assert.equal(startRequestAttempt(blocked, draft()).attempt, null);
 });

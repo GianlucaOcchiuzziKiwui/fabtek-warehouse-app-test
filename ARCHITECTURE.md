@@ -337,7 +337,7 @@ sequenceDiagram
     N-->>B: richiesta confermata
 ```
 
-Se una sola variante tracciata non è più disponibile, la RPC esegue rollback completo. Una variante non tracciata è `unlimited` per dato della variante, non per una scelta del client. Lo stesso `client_request_id` è serializzato prima del controllo stock e restituisce il risultato precedente soltanto quando intestazione e righe ordinate coincidono. Browser e server persistono e confrontano il payload normalizzato; un esito di trasporto ambiguo resta ritentabile con i dati immutabili, mentre un conflitto porta allo storico richieste senza cancellare la bozza.
+Se una sola variante tracciata non è più disponibile, la RPC esegue rollback completo. Una variante non tracciata è `unlimited` per dato della variante, non per una scelta del client. Lo stesso `client_request_id` è serializzato prima del controllo stock e restituisce il risultato precedente soltanto quando intestazione e righe ordinate coincidono. Il browser persiste il payload normalizzato in un envelope versionato e vincolato all'UUID del profilo autenticato; un esito di trasporto ambiguo resta ritentabile con i dati immutabili, mentre un conflitto porta allo storico senza cancellare la bozza. Solo dopo una conferma esplicita l'utente può mantenere i contenuti, generare una nuova chiave e sbloccare la bozza.
 
 ### 9.2 Evasione
 
