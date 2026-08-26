@@ -133,7 +133,7 @@ test("validates and normalizes a fulfillment payload", () => {
   assert.equal(result.data.notes, "Ritirato dal reparto");
 });
 
-test("counts Unicode code points like PostgreSQL fulfillment note limits", () => {
+test("counts Unicode code points for the application fulfillment note limit", () => {
   const valid = validateFulfillment({
     requestLineId: "40000000-0000-4000-8000-000000000001",
     quantity: 1,

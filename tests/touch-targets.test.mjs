@@ -5,6 +5,7 @@ import test from "node:test";
 const PRIMARY_FLOW_CONTROL_FILES = [
   "components/catalog/catalog-results.tsx",
   "components/requests/add-to-request-button.tsx",
+  "components/requests/request-catalog-picker.tsx",
   "components/requests/draft-print-view.tsx",
 ];
 

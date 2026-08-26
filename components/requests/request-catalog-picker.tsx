@@ -84,9 +84,9 @@ function RequestPagination({
   return (
     <nav aria-label="Paginazione selezione materiali" className="flex items-center justify-between gap-4">
       {result.page <= 1 ? (
-        <Button variant="outline" size="sm" disabled><ArrowLeft aria-hidden="true" />Precedente</Button>
+        <Button variant="outline" disabled><ArrowLeft aria-hidden="true" />Precedente</Button>
       ) : (
-        <Button asChild variant="outline" size="sm">
+        <Button asChild variant="outline">
           <Link href={`/richieste/nuova?${requestFilterParams(filters, result.page - 1)}`}>
             <ArrowLeft aria-hidden="true" />Precedente
           </Link>
@@ -94,9 +94,9 @@ function RequestPagination({
       )}
       <span className="text-sm text-muted-foreground">Pagina {result.page} di {pageCount}</span>
       {result.page >= pageCount ? (
-        <Button variant="outline" size="sm" disabled>Successiva<ArrowRight aria-hidden="true" /></Button>
+        <Button variant="outline" disabled>Successiva<ArrowRight aria-hidden="true" /></Button>
       ) : (
-        <Button asChild variant="outline" size="sm">
+        <Button asChild variant="outline">
           <Link href={`/richieste/nuova?${requestFilterParams(filters, result.page + 1)}`}>
             Successiva<ArrowRight aria-hidden="true" />
           </Link>
