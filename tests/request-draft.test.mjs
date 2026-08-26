@@ -32,6 +32,25 @@ test("adding the same variant updates one cart line", () => {
   assert.equal(second.lines[0].quantity, 3);
 });
 
+test("adding a malformed line preserves the valid draft", () => {
+  const initial = requestDraftReducer(createEmptyDraft(), {
+    type: "add-line",
+    line: variantLine({ quantity: 2 }),
+  });
+  const invalidLines = [
+    variantLine({ quantity: 0 }),
+    variantLine({ quantity: 1.5 }),
+    variantLine({ quantity: 1_000_000 }),
+    variantLine({ itemVariantId: "not-a-uuid" }),
+    variantLine({ categoryId: "not-a-uuid" }),
+  ];
+
+  for (const line of invalidLines) {
+    const updated = requestDraftReducer(initial, { type: "add-line", line });
+    assert.equal(updated, initial);
+  }
+});
+
 test("setting a quantity updates only the matching cart line", () => {
   const initial = requestDraftReducer(createEmptyDraft(), {
     type: "add-line",

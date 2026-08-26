@@ -121,17 +121,20 @@ export function requestDraftReducer(
     case "set-header":
       return { ...draft, header: { ...draft.header, ...action.header } };
     case "add-line": {
+      const line = parseLine(action.line);
+      if (!line) return draft;
+
       const existingLineIndex = draft.lines.findIndex(
-        (line) => line.itemVariantId === action.line.itemVariantId,
+        (draftLine) => draftLine.itemVariantId === line.itemVariantId,
       );
       if (existingLineIndex === -1) {
-        return { ...draft, lines: [...draft.lines, action.line] };
+        return { ...draft, lines: [...draft.lines, line] };
       }
 
       return {
         ...draft,
-        lines: draft.lines.map((line, index) => (
-          index === existingLineIndex ? action.line : line
+        lines: draft.lines.map((draftLine, index) => (
+          index === existingLineIndex ? line : draftLine
         )),
       };
     }
