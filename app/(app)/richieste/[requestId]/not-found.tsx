@@ -10,7 +10,7 @@ export default function RequestNotFound() {
         Richiesta non trovata
       </h1>
       <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-        La richiesta non esiste oppure non Ã¨ visibile con il tuo profilo.
+        La richiesta non esiste oppure non è visibile con il tuo profilo.
       </p>
       <Button asChild variant="outline" className="mt-5">
         <Link href="/richieste">Torna alle richieste</Link>

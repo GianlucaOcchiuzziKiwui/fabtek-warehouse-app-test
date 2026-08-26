@@ -33,7 +33,7 @@ async function RequestsContent({ searchParams }: { searchParams: RequestSearchPa
       return (
         <EmptyState
           title="Richieste non disponibili"
-          description="Non Ã¨ stato possibile caricare lo storico. Riprova tra qualche minuto."
+          description="Non è stato possibile caricare lo storico. Riprova tra qualche minuto."
         />
       );
     }

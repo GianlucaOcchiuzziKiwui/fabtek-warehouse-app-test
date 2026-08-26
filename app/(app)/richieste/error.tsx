@@ -22,7 +22,7 @@ export default function RequestsError({
         Impossibile caricare le richieste
       </h1>
       <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-        Si Ã¨ verificato un errore inatteso. Riprova senza perdere la pagina corrente.
+        Si è verificato un errore inatteso. Riprova senza perdere la pagina corrente.
       </p>
       <Button type="button" variant="outline" onClick={retry} className="mt-5">
         <RotateCcw aria-hidden="true" />

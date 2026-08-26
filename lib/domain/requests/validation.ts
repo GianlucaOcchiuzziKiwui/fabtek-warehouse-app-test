@@ -26,7 +26,8 @@ function normalizeRequiredText(value: unknown, limit: number): string | null {
   }
 
   const normalized = value.trim();
-  return normalized.length > 0 && normalized.length <= limit ? normalized : null;
+  const characterCount = Array.from(normalized).length;
+  return characterCount > 0 && characterCount <= limit ? normalized : null;
 }
 
 export function normalizeOptionalNotes(value: unknown, limit?: number): string | null | undefined {
@@ -38,7 +39,7 @@ export function normalizeOptionalNotes(value: unknown, limit?: number): string |
   }
 
   const normalized = value.trim();
-  if (limit !== undefined && normalized.length > limit) {
+  if (limit !== undefined && Array.from(normalized).length > limit) {
     return undefined;
   }
   return normalized || null;

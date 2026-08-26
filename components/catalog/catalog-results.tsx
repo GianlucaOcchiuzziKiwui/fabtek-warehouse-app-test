@@ -9,7 +9,7 @@ import type {
 import { ExternalLink } from "lucide-react";
 import Link from "next/link";
 
-const REQUEST_SELECT_STYLES = "h-9 min-w-0 rounded-lg border border-input bg-background px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25";
+const REQUEST_SELECT_STYLES = "h-10 min-w-0 rounded-lg border border-input bg-background px-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25";
 
 function filterParams(filters: CatalogFilters, page?: number) {
   const params = new URLSearchParams();
@@ -98,7 +98,7 @@ function RequestCta({
           </select>
         </>
       )}
-      <Button type="submit" size="sm" variant="accent">
+      <Button type="submit" variant="accent">
         Richiedi questo articolo
       </Button>
     </form>
@@ -150,9 +150,9 @@ function Pagination({
   return (
     <nav aria-label="Paginazione catalogo" className="flex items-center justify-between gap-4">
       {result.page <= 1 ? (
-        <Button variant="outline" size="sm" disabled>Precedente</Button>
+        <Button variant="outline" disabled>Precedente</Button>
       ) : (
-        <Button asChild variant="outline" size="sm">
+        <Button asChild variant="outline">
           <Link href={previousHref}>Precedente</Link>
         </Button>
       )}
@@ -160,9 +160,9 @@ function Pagination({
         Pagina {result.page} di {pageCount}
       </span>
       {result.page >= pageCount ? (
-        <Button variant="outline" size="sm" disabled>Successiva</Button>
+        <Button variant="outline" disabled>Successiva</Button>
       ) : (
-        <Button asChild variant="outline" size="sm">
+        <Button asChild variant="outline">
           <Link href={nextHref}>Successiva</Link>
         </Button>
       )}

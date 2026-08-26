@@ -7,7 +7,7 @@ import { canAddDraftLine } from "@/lib/domain/requests/line-rules";
 import { Check, Plus } from "lucide-react";
 import { useState } from "react";
 
-const SELECT_STYLES = "h-9 min-w-0 rounded-lg border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25";
+const SELECT_STYLES = "h-10 min-w-0 rounded-lg border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25";
 
 type RequestCategory = {
   id: string;
@@ -37,6 +37,10 @@ export function AddToRequestButton({
   const quantity = Number(quantityValue);
   const validation = canAddDraftLine({ stock }, quantity);
   const headerIsComplete = isRequestHeaderComplete(draft.header);
+  const showQuantityError = headerIsComplete
+    && !validation.ok
+    && quantityValue !== "0";
+  const quantityErrorId = `request-quantity-error-${itemVariantId}`;
   const canAdd = headerIsComplete && Boolean(categoryId) && validation.ok;
 
   function addToDraft() {
@@ -87,17 +91,19 @@ export function AddToRequestButton({
               setQuantityValue(event.target.value);
               setWasAdded(false);
             }}
-            min={0}
+            min={1}
             max={stock.trackInventory && stock.availableQuantity !== null
               ? stock.availableQuantity
               : 999_999}
             step={1}
             inputMode="numeric"
-            className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25"
+            aria-invalid={showQuantityError}
+            aria-describedby={showQuantityError ? quantityErrorId : undefined}
+            className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25"
           />
         </div>
 
-        <Button type="button" size="sm" variant="accent" onClick={addToDraft} disabled={!canAdd}>
+        <Button type="button" variant="accent" onClick={addToDraft} disabled={!canAdd}>
           {wasAdded ? <Check aria-hidden="true" /> : <Plus aria-hidden="true" />}
           {wasAdded ? "Aggiunto" : "Aggiungi"}
         </Button>
@@ -105,8 +111,10 @@ export function AddToRequestButton({
 
       {!headerIsComplete ? (
         <p className="text-xs text-amber-700">Completa l’intestazione prima di aggiungere materiali.</p>
-      ) : !validation.ok && quantityValue !== "0" ? (
-        <p className="text-xs text-destructive">{validation.error.message}</p>
+      ) : showQuantityError ? (
+        <p id={quantityErrorId} className="text-xs text-destructive">
+          {validation.error.message}
+        </p>
       ) : null}
     </div>
   );

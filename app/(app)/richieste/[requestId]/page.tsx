@@ -56,7 +56,7 @@ export default function RequestDetailPage({
     <div className="space-y-8">
       <PageHeading
         title="Dettaglio richiesta"
-        description="Dati confermati, quantitÃ  e cronologia delle consegne."
+        description="Dati confermati, quantità e cronologia delle consegne."
       />
       <Suspense fallback={<RequestDetailLoading />}>
         <RequestDetailContent params={params} searchParams={searchParams} />

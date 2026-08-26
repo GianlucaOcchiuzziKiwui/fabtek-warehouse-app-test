@@ -31,7 +31,7 @@ function normalizeNotes(value: unknown): string | null | undefined {
   }
 
   const normalized = value.trim();
-  return normalized.length <= 500 ? normalized || null : undefined;
+  return Array.from(normalized).length <= 500 ? normalized || null : undefined;
 }
 
 export function validateFulfillment(input: unknown): ValidationResult<FulfillRequestInput> {

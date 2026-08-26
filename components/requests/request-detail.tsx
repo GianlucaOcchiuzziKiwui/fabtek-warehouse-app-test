@@ -32,7 +32,7 @@ function FulfillmentItem({ item }: { item: FulfillmentHistoryItem }) {
       <CheckCircle2 aria-hidden="true" className="absolute left-0 top-0.5 size-4 text-status-good" />
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <span className="font-semibold text-foreground">
-          {item.quantity} {item.quantity === 1 ? "unitÃ  consegnata" : "unitÃ  consegnate"}
+          {item.quantity} {item.quantity === 1 ? "unità consegnata" : "unità consegnate"}
         </span>
         <time dateTime={item.fulfilledAt} className="text-xs text-muted-foreground">
           {item.fulfilledAtLabel}
@@ -59,7 +59,7 @@ function RequestLine({
     ["Diametro", line.diameter],
     ["Materiale", line.material],
     ["Connessione", line.connection],
-    ["UnitÃ ", line.unitOfMeasure],
+    ["Unità", line.unitOfMeasure],
   ].filter((entry): entry is [string, string] => Boolean(entry[1]));
 
   return (
@@ -68,7 +68,7 @@ function RequestLine({
         <div className="min-w-0">
           <p className="text-xs font-semibold uppercase tracking-wide text-primary">
             {line.fabtekCode}
-            {line.oracleSapioCode ? ` Â· Oracle/Sapio ${line.oracleSapioCode}` : null}
+            {line.oracleSapioCode ? ` · Oracle/Sapio ${line.oracleSapioCode}` : null}
           </p>
           <h2 className="mt-1 font-heading text-xl font-semibold text-foreground">
             {line.description}
@@ -132,7 +132,7 @@ export function RequestDetail({
           <CheckCircle2 aria-hidden="true" className="mt-0.5 size-5 shrink-0" />
           <div>
             <p className="font-semibold">Richiesta inviata correttamente.</p>
-            <p className="mt-0.5">Il progressivo assegnato Ã¨ #{request.requestNumber}.</p>
+            <p className="mt-0.5">Il progressivo assegnato è #{request.requestNumber}.</p>
           </div>
         </div>
       ) : null}

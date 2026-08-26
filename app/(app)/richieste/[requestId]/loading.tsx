@@ -5,7 +5,7 @@ export default function RequestDetailPageLoading() {
     <div className="space-y-8">
       <PageHeading
         title="Dettaglio richiesta"
-        description="Dati confermati, quantitÃ  e cronologia delle consegne."
+        description="Dati confermati, quantità e cronologia delle consegne."
       />
       <div className="space-y-5" aria-label="Caricamento dettaglio richiesta">
         <div className="h-52 animate-pulse rounded-xl border border-border bg-muted/60" />

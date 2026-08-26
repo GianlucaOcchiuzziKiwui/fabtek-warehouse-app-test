@@ -122,6 +122,8 @@ function QuantityEditor({
   validation: LineValidation;
   onChange: (value: string) => void;
 }) {
+  const errorId = `${controlId}-error`;
+
   return (
     <div>
       <label htmlFor={controlId} className="sr-only">Quantità {line.partNumber}</label>
@@ -137,10 +139,13 @@ function QuantityEditor({
         step={1}
         inputMode="numeric"
         aria-invalid={!validation.result.ok}
-        className="h-9 w-28 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25 aria-invalid:border-destructive"
+        aria-describedby={!validation.result.ok ? errorId : undefined}
+        className="h-10 w-28 rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25 aria-invalid:border-destructive"
       />
       {!validation.result.ok ? (
-        <p className="mt-1 max-w-48 text-xs text-destructive">{validation.result.error.message}</p>
+        <p id={errorId} className="mt-1 max-w-48 text-xs text-destructive">
+          {validation.result.error.message}
+        </p>
       ) : null}
     </div>
   );
@@ -159,7 +164,7 @@ function RemoveLineButton({
     <Button
       type="button"
       variant="ghost"
-      size="icon-sm"
+      size="icon"
       aria-label={`Rimuovi ${label}`}
       onClick={() => onRemove(itemVariantId)}
     >

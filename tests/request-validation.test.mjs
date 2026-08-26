@@ -79,6 +79,15 @@ test("enforces SQL header limits after trimming", () => {
   assert.equal(invalid.error.code, "INVALID_REQUEST_HEADER");
 });
 
+test("counts Unicode code points like PostgreSQL header limits", () => {
+  const valid = validateSubmitRequest(request({ project: "\u{1F527}".repeat(120) }));
+  const invalid = validateSubmitRequest(request({ project: "\u{1F527}".repeat(121) }));
+
+  assert.equal(valid.ok, true);
+  assert.equal(invalid.ok, false);
+  assert.equal(invalid.error.code, "INVALID_REQUEST_HEADER");
+});
+
 test("normalizes request notes and rejects malformed identifiers", () => {
   const normalized = validateSubmitRequest(request({ notes: "  Consegna urgente  " }));
   const invalid = validateSubmitRequest(request({ clientRequestId: "not-a-uuid" }));
@@ -122,6 +131,25 @@ test("validates and normalizes a fulfillment payload", () => {
 
   assert.equal(result.ok, true);
   assert.equal(result.data.notes, "Ritirato dal reparto");
+});
+
+test("counts Unicode code points like PostgreSQL fulfillment note limits", () => {
+  const valid = validateFulfillment({
+    requestLineId: "40000000-0000-4000-8000-000000000001",
+    quantity: 1,
+    idempotencyKey: "50000000-0000-4000-8000-000000000001",
+    notes: "\u{1F527}".repeat(500),
+  });
+  const invalid = validateFulfillment({
+    requestLineId: "40000000-0000-4000-8000-000000000001",
+    quantity: 1,
+    idempotencyKey: "50000000-0000-4000-8000-000000000001",
+    notes: "\u{1F527}".repeat(501),
+  });
+
+  assert.equal(valid.ok, true);
+  assert.equal(invalid.ok, false);
+  assert.equal(invalid.error.code, "INVALID_FULFILLMENT");
 });
 
 test("accepts PostgreSQL UUIDs without an RFC variant in fulfillment fields", () => {
