@@ -3,26 +3,20 @@ import "server-only";
 import { requirePermission } from "@/lib/auth/current-profile";
 import {
   mapCatalogRows,
+  type CatalogFilterOptions,
+  type CatalogFilters,
   type CatalogOption,
   type CatalogVariant,
   type StockView,
 } from "@/lib/data/catalog-mappers";
 import { createClient } from "@/lib/supabase/server";
 
-export type { CatalogOption, CatalogVariant, StockView };
-
-export type CatalogFilters = {
-  query?: string;
-  categoryId?: string;
-  familyId?: string;
-  componentId?: string;
-  page?: number;
-};
-
-export type CatalogFilterOptions = {
-  categories: CatalogOption[];
-  families: CatalogOption[];
-  components: CatalogOption[];
+export type {
+  CatalogFilterOptions,
+  CatalogFilters,
+  CatalogOption,
+  CatalogVariant,
+  StockView,
 };
 
 export type CatalogSearchResult = {

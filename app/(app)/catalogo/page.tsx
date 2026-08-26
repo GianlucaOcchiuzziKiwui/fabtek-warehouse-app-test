@@ -8,6 +8,7 @@ import {
   searchCatalog,
   type CatalogFilters,
 } from "@/lib/data/catalog";
+import { canonicalizeCatalogFilters } from "@/lib/data/catalog-mappers";
 import { Suspense } from "react";
 
 type CatalogSearchParams = Promise<Record<string, string | string[] | undefined>>;
@@ -47,15 +48,14 @@ async function CatalogContent({ searchParams }: { searchParams: CatalogSearchPar
   const filters = filtersFromSearchParams(await searchParams);
 
   try {
-    const [options, result] = await Promise.all([
-      getCatalogFilters(filters),
-      searchCatalog(filters),
-    ]);
+    const options = await getCatalogFilters(filters);
+    const canonicalFilters = canonicalizeCatalogFilters(filters, options);
+    const result = await searchCatalog(canonicalFilters);
 
     return (
       <div className="space-y-7">
-        <CatalogFiltersForm filters={filters} options={options} />
-        <CatalogResults result={result} filters={filters} />
+        <CatalogFiltersForm filters={canonicalFilters} options={options} />
+        <CatalogResults result={result} filters={canonicalFilters} />
       </div>
     );
   } catch (error) {

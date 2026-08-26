@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  canonicalizeCatalogFilters,
   getAvailabilityLabel,
   mapCatalogRows,
 } from "../lib/data/catalog-mappers.ts";
@@ -80,4 +81,32 @@ test("does not invent a supplier or datasheet when relations are empty", () => {
 
   assert.equal(mapped.supplier, null);
   assert.equal(mapped.datasheet, null);
+});
+
+test("clears stale descendants when a parent catalog filter changes", () => {
+  const filters = canonicalizeCatalogFilters({
+    query: "tubo",
+    categoryId: "30000000-0000-0000-0000-000000000002",
+    familyId: "50000000-0000-0000-0000-000000000001",
+    componentId: "40000000-0000-0000-0000-000000000001",
+    page: 4,
+  }, {
+    categories: [{
+      id: "30000000-0000-0000-0000-000000000002",
+      name: "Acqua",
+    }],
+    families: [{
+      id: "50000000-0000-0000-0000-000000000002",
+      name: "Valvole",
+    }],
+    components: [],
+  });
+
+  assert.deepEqual(filters, {
+    query: "tubo",
+    categoryId: "30000000-0000-0000-0000-000000000002",
+    familyId: undefined,
+    componentId: undefined,
+    page: 1,
+  });
 });

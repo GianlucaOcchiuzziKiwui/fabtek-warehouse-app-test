@@ -88,8 +88,10 @@ function RequestCta({
             id={`category-${variant.id}`}
             name="categoryId"
             required
+            defaultValue=""
             className={REQUEST_SELECT_STYLES}
           >
+            <option value="" disabled>Seleziona categoria</option>
             {variant.categories.map((category) => (
               <option key={category.id} value={category.id}>{category.name}</option>
             ))}

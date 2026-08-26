@@ -3,6 +3,20 @@ export type CatalogOption = {
   name: string;
 };
 
+export type CatalogFilters = {
+  query?: string;
+  categoryId?: string;
+  familyId?: string;
+  componentId?: string;
+  page?: number;
+};
+
+export type CatalogFilterOptions = {
+  categories: CatalogOption[];
+  families: CatalogOption[];
+  components: CatalogOption[];
+};
+
 export type StockStatus =
   | "available"
   | "low_stock"
@@ -165,6 +179,41 @@ function mapDatasheet(
   }
 
   return null;
+}
+
+function includesOption(options: CatalogOption[], id: string | undefined) {
+  return Boolean(id && options.some((option) => option.id === id));
+}
+
+export function canonicalizeCatalogFilters(
+  filters: CatalogFilters,
+  options: CatalogFilterOptions,
+): CatalogFilters {
+  const categoryId = filters.categoryId
+    && includesOption(options.categories, filters.categoryId)
+    ? filters.categoryId
+    : undefined;
+  const familyId = (!filters.categoryId || categoryId)
+    && filters.familyId
+    && includesOption(options.families, filters.familyId)
+    ? filters.familyId
+    : undefined;
+  const componentId = familyId
+    && filters.componentId
+    && includesOption(options.components, filters.componentId)
+    ? filters.componentId
+    : undefined;
+  const hierarchyChanged = categoryId !== filters.categoryId
+    || familyId !== filters.familyId
+    || componentId !== filters.componentId;
+
+  return {
+    ...filters,
+    categoryId,
+    familyId,
+    componentId,
+    page: hierarchyChanged ? 1 : filters.page,
+  };
 }
 
 export function getAvailabilityLabel(stock: StockView): AvailabilityLabel {
