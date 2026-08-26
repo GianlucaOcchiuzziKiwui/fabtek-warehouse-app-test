@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   clampPaginationPage,
   collectPaginatedRows,
+  getSafePaginationRange,
   PaginatedQueryError,
 } from "../lib/data/paginated-query.ts";
 
@@ -41,4 +42,17 @@ test("clamps an out-of-range page to the last available page", () => {
   assert.equal(clampPaginationPage(99, 21, 20), 2);
   assert.equal(clampPaginationPage(2, 0, 20), 1);
   assert.equal(clampPaginationPage(1, 21, 20), 1);
+});
+
+test("normalizes unsafe pages before constructing a PostgREST range", () => {
+  assert.deepEqual(getSafePaginationRange(Number("1e100"), 20), {
+    page: 1,
+    from: 0,
+    to: 19,
+  });
+  assert.deepEqual(getSafePaginationRange(Number.MAX_SAFE_INTEGER, 20), {
+    page: 1,
+    from: 0,
+    to: 19,
+  });
 });

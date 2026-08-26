@@ -24,7 +24,7 @@ function RequestsLoading() {
 
 async function RequestsContent({ searchParams }: { searchParams: RequestSearchParams }) {
   const pageValue = Number(firstValue((await searchParams).page));
-  const page = Number.isInteger(pageValue) && pageValue > 0 ? pageValue : 1;
+  const page = Number.isSafeInteger(pageValue) && pageValue > 0 ? pageValue : 1;
 
   try {
     return <RequestList result={await listOwnRequests({ page })} />;

@@ -13,7 +13,9 @@ import {
 import {
   clampPaginationPage,
   collectPaginatedRows,
+  getSafePaginationRange,
 } from "@/lib/data/paginated-query";
+import { readConsistentRequestDetail } from "@/lib/data/request-consistency";
 import { createClient } from "@/lib/supabase/server";
 
 export type {
@@ -83,7 +85,7 @@ const FULFILLMENT_SELECT = `
 `;
 
 function normalizePage(value: unknown) {
-  return typeof value === "number" && Number.isInteger(value) && value > 0
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0
     ? value
     : 1;
 }
@@ -106,11 +108,11 @@ export async function listOwnRequests(
   filters: RequestListFilters = {},
 ): Promise<RequestListResult> {
   await requirePermission("requests:read-own");
-  let page = normalizePage(filters.page);
+  let page = getSafePaginationRange(normalizePage(filters.page), PAGE_SIZE).page;
   const supabase = await createClient();
 
   async function loadPage(targetPage: number) {
-    const from = (targetPage - 1) * PAGE_SIZE;
+    const range = getSafePaginationRange(targetPage, PAGE_SIZE);
     return supabase
       .from("material_requests")
       .select(`
@@ -123,14 +125,14 @@ export async function listOwnRequests(
       `, { count: "exact" })
       .order("requested_at", { ascending: false })
       .order("request_number", { ascending: false })
-      .range(from, from + PAGE_SIZE - 1);
+      .range(range.from, range.to);
   }
 
   let response = await loadPage(page);
   if (response.error) reportRequestError("list own requests", response.error);
   if (
     !Array.isArray(response.data)
-    || !Number.isInteger(response.count)
+    || !Number.isSafeInteger(response.count)
     || (response.count ?? -1) < 0
   ) {
     reportRequestError("validate own requests response", null);
@@ -169,40 +171,43 @@ export async function getRequestDetail(
   if (!UUID_PATTERN.test(requestId)) return null;
 
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("material_requests")
-    .select(REQUEST_DETAIL_SELECT)
-    .eq("id", requestId)
-    .maybeSingle();
-
-  if (error) reportRequestError("load request detail", error);
-  if (!data) return null;
 
   try {
-    const [lines, fulfillments] = await Promise.all([
-      collectPaginatedRows(async (from, to) => {
-        const response = await supabase
-          .from("material_request_lines")
-          .select(REQUEST_LINE_SELECT)
-          .eq("request_id", requestId)
-          .order("created_at", { ascending: true })
-          .order("id", { ascending: true })
-          .range(from, to);
-        return { data: response.data, error: response.error };
-      }),
-      collectPaginatedRows(async (from, to) => {
-        const response = await supabase
-          .from("fulfillment_events")
-          .select(FULFILLMENT_SELECT)
-          .eq("request_line.request_id", requestId)
-          .order("fulfilled_at", { ascending: true })
-          .order("id", { ascending: true })
-          .range(from, to);
-        return { data: response.data, error: response.error };
-      }),
-    ]);
-    const mappedLines = attachFulfillmentsToLines(lines, fulfillments);
-    return mapRequestDetail({ ...data, lines: mappedLines });
+    return await readConsistentRequestDetail(async () => {
+      const { data, error } = await supabase
+        .from("material_requests")
+        .select(REQUEST_DETAIL_SELECT)
+        .eq("id", requestId)
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!data) return null;
+
+      const [lines, fulfillments] = await Promise.all([
+        collectPaginatedRows(async (from, to) => {
+          const response = await supabase
+            .from("material_request_lines")
+            .select(REQUEST_LINE_SELECT)
+            .eq("request_id", requestId)
+            .order("created_at", { ascending: true })
+            .order("id", { ascending: true })
+            .range(from, to);
+          return { data: response.data, error: response.error };
+        }),
+        collectPaginatedRows(async (from, to) => {
+          const response = await supabase
+            .from("fulfillment_events")
+            .select(FULFILLMENT_SELECT)
+            .eq("request_line.request_id", requestId)
+            .order("fulfilled_at", { ascending: true })
+            .order("id", { ascending: true })
+            .range(from, to);
+          return { data: response.data, error: response.error };
+        }),
+      ]);
+      const mappedLines = attachFulfillmentsToLines(lines, fulfillments);
+      return mapRequestDetail({ ...data, lines: mappedLines });
+    });
   } catch (mappingOrQueryError) {
     return reportRequestError("load complete request detail", mappingOrQueryError);
   }

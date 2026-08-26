@@ -15,15 +15,47 @@ export class PaginatedQueryError extends Error {
 
 const POSTGREST_PAGE_SIZE = 1_000;
 
+export type PaginationRange = {
+  page: number;
+  from: number;
+  to: number;
+};
+
+export function getSafePaginationRange(
+  requestedPage: number,
+  pageSize: number,
+): PaginationRange {
+  if (!Number.isSafeInteger(pageSize) || pageSize <= 0) {
+    throw new RangeError("La dimensione della pagina deve essere positiva.");
+  }
+
+  const page = Number.isSafeInteger(requestedPage) && requestedPage > 0
+    ? requestedPage
+    : 1;
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+
+  if (!Number.isSafeInteger(from) || !Number.isSafeInteger(to)) {
+    return { page: 1, from: 0, to: pageSize - 1 };
+  }
+
+  return { page, from, to };
+}
+
 export function clampPaginationPage(
   requestedPage: number,
   total: number,
   pageSize: number,
 ): number {
-  const normalizedPage = Number.isInteger(requestedPage) && requestedPage > 0
+  const normalizedPage = Number.isSafeInteger(requestedPage) && requestedPage > 0
     ? requestedPage
     : 1;
-  if (!Number.isInteger(total) || total <= 0 || !Number.isInteger(pageSize) || pageSize <= 0) {
+  if (
+    !Number.isSafeInteger(total)
+    || total <= 0
+    || !Number.isSafeInteger(pageSize)
+    || pageSize <= 0
+  ) {
     return 1;
   }
   return Math.min(normalizedPage, Math.ceil(total / pageSize));
