@@ -123,3 +123,22 @@ test("rejects an empty RPC response", async () => {
     },
   });
 });
+
+test("rejects a fulfillment response for a different request line", async () => {
+  const result = await fulfillRequestLine(validFulfillment(), {
+    callRpc: async () => ({
+      data: [fulfilledRow({
+        request_line_id: "20000000-0000-4000-8000-000000000099",
+      })],
+      error: null,
+    }),
+  });
+
+  assert.deepEqual(result, {
+    ok: false,
+    error: {
+      code: "UNEXPECTED_ERROR",
+      message: "Si \u00e8 verificato un errore imprevisto.",
+    },
+  });
+});

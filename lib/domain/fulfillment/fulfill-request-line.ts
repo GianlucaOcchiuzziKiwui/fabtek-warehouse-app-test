@@ -50,7 +50,10 @@ function isRequestStatus(value: unknown): value is FulfillmentResult["lineStatus
   return typeof value === "string" && REQUEST_STATUSES.has(value);
 }
 
-function readRpcResult(data: unknown): FulfillmentResult | null {
+function readRpcResult(
+  data: unknown,
+  expectedRequestLineId: string,
+): FulfillmentResult | null {
   if (!Array.isArray(data) || data.length !== 1 || !isRecord(data[0])) return null;
 
   const row = data[0];
@@ -66,6 +69,7 @@ function readRpcResult(data: unknown): FulfillmentResult | null {
     || !UUID_PATTERN.test(requestId)
     || typeof requestLineId !== "string"
     || !UUID_PATTERN.test(requestLineId)
+    || requestLineId !== expectedRequestLineId
     || !isNonNegativeInteger(fulfilledQuantity)
     || !isNonNegativeInteger(remainingQuantity)
     || !isRequestStatus(lineStatus)
@@ -130,7 +134,7 @@ export async function fulfillRequestLine(
       return { ok: false, error: toActionError(response.error) };
     }
 
-    const result = readRpcResult(response.data);
+    const result = readRpcResult(response.data, data.requestLineId);
     return result
       ? { ok: true, data: result }
       : { ok: false, error: toActionError(null) };

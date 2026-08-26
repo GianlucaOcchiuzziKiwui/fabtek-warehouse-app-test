@@ -44,9 +44,11 @@ function FulfillmentItem({ item }: { item: FulfillmentHistoryItem }) {
 }
 
 function RequestLine({
+  requestId,
   line,
   canManage,
 }: {
+  requestId: string;
   line: RequestLineDetail;
   canManage: boolean;
 }) {
@@ -105,6 +107,7 @@ function RequestLine({
 
       {canManage && line.remainingQuantity > 0 ? (
         <FulfillmentForm
+          requestId={requestId}
           requestLineId={line.id}
           remainingQuantity={line.remainingQuantity}
         />
@@ -180,7 +183,12 @@ export function RequestDetail({
           </p>
         </div>
         {request.lines.map((line) => (
-          <RequestLine key={line.id} line={line} canManage={canManage} />
+          <RequestLine
+            key={line.id}
+            requestId={request.id}
+            line={line}
+            canManage={canManage}
+          />
         ))}
       </section>
     </div>
