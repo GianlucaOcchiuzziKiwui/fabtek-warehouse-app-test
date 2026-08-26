@@ -1,6 +1,8 @@
 import { Brand } from "@/components/brand";
 import { ProfileProvider } from "@/components/auth/profile-context";
+import { AppNavigation } from "@/components/layout/app-navigation";
 import { LogoutButton } from "@/components/logout-button";
+import { RequestDraftProvider } from "@/components/requests/request-draft-provider";
 import { requireCurrentProfile } from "@/lib/auth/current-profile";
 import { ShieldCheck, UserRound } from "lucide-react";
 import { Suspense } from "react";
@@ -11,7 +13,9 @@ async function AuthenticatedApp({ children }: { children: React.ReactNode }) {
 
   return (
     <ProfileProvider profile={profile}>
-      <AppShell fullName={profile.full_name} isAdmin={isAdmin(profile)}>{children}</AppShell>
+      <RequestDraftProvider>
+        <AppShell fullName={profile.full_name} isAdmin={isAdmin(profile)}>{children}</AppShell>
+      </RequestDraftProvider>
     </ProfileProvider>
   );
 }
@@ -65,6 +69,7 @@ function AppShell({
             )}
           </div>
         </div>
+        <AppNavigation isAdmin={Boolean(isAdmin)} />
       </header>
 
       <main className="mx-auto w-full max-w-[1128px] flex-1 px-4 py-8 sm:px-6">
