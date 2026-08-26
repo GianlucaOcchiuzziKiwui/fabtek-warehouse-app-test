@@ -108,3 +108,26 @@ export function RequestHeaderForm() {
     </Card>
   );
 }
+
+export function RequestSelectionGate({ children }: { children: React.ReactNode }) {
+  const { draft } = useRequestDraft();
+  const isComplete = isRequestHeaderComplete(draft.header);
+
+  return (
+    <div className="min-w-0 space-y-3">
+      {!isComplete ? (
+        <div id="request-selection-disabled" role="status" className="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm font-medium text-amber-900">
+          Completa Progetto #, Tool / Line # e Utilities per abilitare la selezione materiali.
+        </div>
+      ) : null}
+      <div
+        inert={!isComplete}
+        aria-disabled={!isComplete}
+        aria-describedby={!isComplete ? "request-selection-disabled" : undefined}
+        className={isComplete ? undefined : "pointer-events-none select-none opacity-50"}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}

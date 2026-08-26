@@ -59,6 +59,15 @@ export type CatalogVariant = {
   stock: StockView;
 };
 
+export type CatalogSelectionInput = {
+  itemVariantId: string;
+  categoryId: string;
+};
+
+export type CatalogSelection = CatalogSelectionInput & {
+  variant: CatalogVariant;
+};
+
 export type AvailabilityLabel = {
   label: string;
   tone: "good" | "warning" | "danger" | "neutral";
@@ -71,6 +80,7 @@ const STOCK_STATUSES = new Set<StockStatus>([
   "unlimited",
   "unknown",
 ]);
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const UNKNOWN_STOCK: StockView = {
   trackInventory: true,
@@ -183,6 +193,49 @@ function mapDatasheet(
 
 function includesOption(options: CatalogOption[], id: string | undefined) {
   return Boolean(id && options.some((option) => option.id === id));
+}
+
+export function normalizeCatalogSelectionInputs(
+  inputs: readonly unknown[],
+): CatalogSelectionInput[] {
+  const normalized: CatalogSelectionInput[] = [];
+  const selectionKeys = new Set<string>();
+
+  for (const input of inputs) {
+    if (!isRecord(input)) continue;
+    const itemVariantId = text(input.itemVariantId);
+    const categoryId = text(input.categoryId);
+    if (
+      !itemVariantId
+      || !categoryId
+      || !UUID_PATTERN.test(itemVariantId)
+      || !UUID_PATTERN.test(categoryId)
+    ) {
+      continue;
+    }
+
+    const key = `${itemVariantId}:${categoryId}`;
+    if (selectionKeys.has(key)) continue;
+    selectionKeys.add(key);
+    normalized.push({ itemVariantId, categoryId });
+  }
+
+  return normalized;
+}
+
+export function mapCatalogSelections(
+  inputs: readonly CatalogSelectionInput[],
+  variants: readonly CatalogVariant[],
+): CatalogSelection[] {
+  const variantsById = new Map(variants.map((variant) => [variant.id, variant]));
+
+  return inputs.flatMap((input) => {
+    const variant = variantsById.get(input.itemVariantId);
+    const hasCategory = variant?.categories.some(
+      (category) => category.id === input.categoryId,
+    );
+    return variant && hasCategory ? [{ ...input, variant }] : [];
+  });
 }
 
 export function canonicalizeCatalogFilters(

@@ -6,7 +6,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeading } from "@/components/shared/page-heading";
 import {
   CatalogDataError,
-  getCatalogVariantSelection,
+  getCatalogVariantSelections,
 } from "@/lib/data/catalog";
 import { Suspense } from "react";
 
@@ -48,28 +48,26 @@ async function SummaryContent({ searchParams }: { searchParams: SummarySearchPar
   const selections = parseLineSelections((await searchParams).line);
 
   try {
-    const variants = await Promise.all(
-      selections.map((line) => getCatalogVariantSelection(line.itemVariantId, line.categoryId)),
-    );
-    const details = variants.flatMap<DraftLineDetails>((variant, index) => {
-      if (!variant) return [];
-      const selection = selections[index];
-      const category = variant.categories.find((item) => item.id === selection.categoryId);
+    const resolvedSelections = await getCatalogVariantSelections(selections);
+    const details = resolvedSelections.flatMap<DraftLineDetails>((selection) => {
+      const category = selection.variant.categories.find(
+        (item) => item.id === selection.categoryId,
+      );
       if (!category) return [];
 
       return [{
         itemVariantId: selection.itemVariantId,
         categoryId: selection.categoryId,
-        partNumber: variant.fabtekCode,
+        partNumber: selection.variant.fabtekCode,
         category: category.name,
-        family: variant.family?.name ?? "",
-        item: variant.component?.name ?? variant.description,
-        size: variant.diameter ?? "",
-        material: variant.material,
-        connection: variant.connection,
+        family: selection.variant.family?.name ?? "",
+        item: selection.variant.component?.name ?? selection.variant.description,
+        size: selection.variant.diameter ?? "",
+        material: selection.variant.material,
+        connection: selection.variant.connection,
         stock: {
-          trackInventory: variant.stock.trackInventory,
-          availableQuantity: variant.stock.availableQuantity,
+          trackInventory: selection.variant.stock.trackInventory,
+          availableQuantity: selection.variant.stock.availableQuantity,
         },
       }];
     });

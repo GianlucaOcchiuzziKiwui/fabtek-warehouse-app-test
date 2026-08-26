@@ -2,10 +2,14 @@ import "server-only";
 
 import { requirePermission } from "@/lib/auth/current-profile";
 import {
+  mapCatalogSelections,
   mapCatalogRows,
+  normalizeCatalogSelectionInputs,
   type CatalogFilterOptions,
   type CatalogFilters,
   type CatalogOption,
+  type CatalogSelection,
+  type CatalogSelectionInput,
   type CatalogVariant,
   type StockView,
 } from "@/lib/data/catalog-mappers";
@@ -15,6 +19,8 @@ export type {
   CatalogFilterOptions,
   CatalogFilters,
   CatalogOption,
+  CatalogSelection,
+  CatalogSelectionInput,
   CatalogVariant,
   StockView,
 };
@@ -61,6 +67,24 @@ const CATALOG_SELECT = `
     supplier:suppliers!inner(name)
   ),
   assets:product_assets(kind, title, storage_path, external_url)
+`;
+
+const CATALOG_SELECTION_SELECT = `
+  id,
+  fabtek_code,
+  description,
+  diameter,
+  material,
+  connection,
+  component:components!inner(
+    id,
+    name,
+    family:families!inner(id, name)
+  ),
+  unit_of_measure:units_of_measure!inner(code, name),
+  categories:item_variant_categories!inner(
+    category:categories!inner(id, name)
+  )
 `;
 
 type NormalizedCatalogFilters = {
@@ -312,40 +336,47 @@ export async function getCatalogVariantSelection(
   variantId: string,
   categoryId: string,
 ): Promise<CatalogVariant | null> {
+  const selections = await getCatalogVariantSelections([{
+    itemVariantId: variantId,
+    categoryId,
+  }]);
+  return selections[0]?.variant ?? null;
+}
+
+export async function getCatalogVariantSelections(
+  inputs: readonly CatalogSelectionInput[],
+): Promise<CatalogSelection[]> {
   await requirePermission("catalog:read");
-  const normalizedVariantId = normalizeId(variantId);
-  const normalizedCategoryId = normalizeId(categoryId);
-  if (!normalizedVariantId || !normalizedCategoryId) return null;
+  const normalized = normalizeCatalogSelectionInputs(inputs);
+  if (normalized.length === 0) return [];
+
+  const variantIds = [...new Set(normalized.map((input) => input.itemVariantId))];
+  const categoryIds = [...new Set(normalized.map((input) => input.categoryId))];
 
   const supabase = await createClient();
   const catalogQuery = supabase
     .from("item_variants")
-    .select(CATALOG_SELECT)
-    .eq("id", normalizedVariantId)
+    .select(CATALOG_SELECTION_SELECT)
+    .in("id", variantIds)
     .eq("is_active", true)
     .eq("component.is_active", true)
     .eq("component.family.is_active", true)
     .eq("unit_of_measure.is_active", true)
-    .eq("categories.category_id", normalizedCategoryId)
+    .in("categories.category_id", categoryIds)
     .eq("categories.category.is_active", true)
-    .eq("suppliers.supplier.is_active", true)
-    .eq("assets.is_active", true)
-    .eq("assets.kind", "datasheet")
-    .maybeSingle();
+    .limit(variantIds.length);
 
   const [catalogResponse, availabilityResponse] = await Promise.all([
     catalogQuery,
     supabase.rpc("get_catalog_availability"),
   ]);
 
-  if (catalogResponse.error) reportCatalogError("load variant", catalogResponse.error);
+  if (catalogResponse.error) reportCatalogError("load variants", catalogResponse.error);
   if (availabilityResponse.error) reportCatalogError("load availability", availabilityResponse.error);
-  if (!catalogResponse.data) return null;
 
-  const signedUrls = await getSignedDatasheetUrls(supabase, [catalogResponse.data]);
-  return mapCatalogRows(
-    [catalogResponse.data],
+  const variants = mapCatalogRows(
+    catalogResponse.data ?? [],
     availabilityResponse.data ?? [],
-    signedUrls,
-  )[0] ?? null;
+  );
+  return mapCatalogSelections(normalized, variants);
 }

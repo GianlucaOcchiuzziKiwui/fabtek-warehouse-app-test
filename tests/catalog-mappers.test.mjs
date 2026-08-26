@@ -4,7 +4,9 @@ import test from "node:test";
 import {
   canonicalizeCatalogFilters,
   getAvailabilityLabel,
+  mapCatalogSelections,
   mapCatalogRows,
+  normalizeCatalogSelectionInputs,
 } from "../lib/data/catalog-mappers.ts";
 
 function stock(status, availableQuantity) {
@@ -109,4 +111,71 @@ test("clears stale descendants when a parent catalog filter changes", () => {
     componentId: undefined,
     page: 1,
   });
+});
+
+test("normalizes valid catalogue selection pairs and removes duplicates", () => {
+  assert.deepEqual(normalizeCatalogSelectionInputs([
+    {
+      itemVariantId: "20000000-0000-0000-0000-000000000001",
+      categoryId: "30000000-0000-0000-0000-000000000001",
+    },
+    {
+      itemVariantId: "not-a-uuid",
+      categoryId: "30000000-0000-0000-0000-000000000001",
+    },
+    {
+      itemVariantId: "20000000-0000-0000-0000-000000000001",
+      categoryId: "30000000-0000-0000-0000-000000000001",
+    },
+  ]), [{
+    itemVariantId: "20000000-0000-0000-0000-000000000001",
+    categoryId: "30000000-0000-0000-0000-000000000001",
+  }]);
+});
+
+test("maps only exact requested variant and category pairs in request order", () => {
+  const variants = mapCatalogRows([
+    row(),
+    row({
+      id: "20000000-0000-0000-0000-000000000002",
+      fabtek_code: "FT-002",
+      categories: [{
+        category: {
+          id: "30000000-0000-0000-0000-000000000002",
+          name: "Acqua",
+        },
+      }],
+    }),
+  ], []);
+  const mapped = mapCatalogSelections([
+    {
+      itemVariantId: "20000000-0000-0000-0000-000000000002",
+      categoryId: "30000000-0000-0000-0000-000000000002",
+    },
+    {
+      itemVariantId: "20000000-0000-0000-0000-000000000001",
+      categoryId: "30000000-0000-0000-0000-000000000002",
+    },
+    {
+      itemVariantId: "20000000-0000-0000-0000-000000000001",
+      categoryId: "30000000-0000-0000-0000-000000000001",
+    },
+  ], variants);
+
+  assert.deepEqual(mapped.map((selection) => ({
+    itemVariantId: selection.itemVariantId,
+    categoryId: selection.categoryId,
+    fabtekCode: selection.variant.fabtekCode,
+  })), [
+    {
+      itemVariantId: "20000000-0000-0000-0000-000000000002",
+      categoryId: "30000000-0000-0000-0000-000000000002",
+      fabtekCode: "FT-002",
+    },
+    {
+      itemVariantId: "20000000-0000-0000-0000-000000000001",
+      categoryId: "30000000-0000-0000-0000-000000000001",
+      fabtekCode: "FT-001",
+    },
+  ]);
 });

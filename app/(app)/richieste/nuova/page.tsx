@@ -1,6 +1,9 @@
 import { CartSummary } from "@/components/requests/cart-summary";
 import { RequestCatalogPicker } from "@/components/requests/request-catalog-picker";
-import { RequestHeaderForm } from "@/components/requests/request-header-form";
+import {
+  RequestHeaderForm,
+  RequestSelectionGate,
+} from "@/components/requests/request-header-form";
 import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeading } from "@/components/shared/page-heading";
 import {
@@ -100,9 +103,11 @@ export default function NewRequestPage({ searchParams }: { searchParams: Request
       />
       <RequestHeaderForm />
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
-        <Suspense fallback={<RequestCatalogLoading />}>
-          <RequestCatalogContent searchParams={searchParams} />
-        </Suspense>
+        <RequestSelectionGate>
+          <Suspense fallback={<RequestCatalogLoading />}>
+            <RequestCatalogContent searchParams={searchParams} />
+          </Suspense>
+        </RequestSelectionGate>
         <CartSummary />
       </div>
     </div>
