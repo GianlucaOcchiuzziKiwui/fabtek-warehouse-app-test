@@ -16,9 +16,9 @@ function Pagination({ result }: { result: RequestListResult }) {
   return (
     <nav aria-label="Paginazione richieste" className="flex items-center justify-between gap-4">
       {result.page <= 1 ? (
-        <Button variant="outline" size="sm" disabled>Precedente</Button>
+        <Button variant="outline" className="min-h-10" disabled>Precedente</Button>
       ) : (
-        <Button asChild variant="outline" size="sm">
+        <Button asChild variant="outline" className="min-h-10">
           <Link href={pageHref(result.page - 1)}>Precedente</Link>
         </Button>
       )}
@@ -26,9 +26,9 @@ function Pagination({ result }: { result: RequestListResult }) {
         Pagina {result.page} di {pageCount}
       </span>
       {result.page >= pageCount ? (
-        <Button variant="outline" size="sm" disabled>Successiva</Button>
+        <Button variant="outline" className="min-h-10" disabled>Successiva</Button>
       ) : (
-        <Button asChild variant="outline" size="sm">
+        <Button asChild variant="outline" className="min-h-10">
           <Link href={pageHref(result.page + 1)}>Successiva</Link>
         </Button>
       )}
@@ -81,7 +81,7 @@ export function RequestList({ result }: { result: RequestListResult }) {
                 <td className="px-4 py-4">{request.lineCount}</td>
                 <td className="px-4 py-4"><RequestStatusBadge status={request.status} /></td>
                 <td className="px-4 py-4 text-right">
-                  <Button asChild variant="ghost" size="sm">
+                  <Button asChild variant="ghost" className="min-h-10">
                     <Link href={`/richieste/${request.id}`} aria-label={`Apri richiesta ${request.requestNumber}`}>
                       Dettaglio
                       <ArrowRight aria-hidden="true" />

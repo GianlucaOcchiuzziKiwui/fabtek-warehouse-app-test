@@ -63,6 +63,13 @@ type QuantitySummary = {
   fulfilledQuantity: number;
 };
 
+export class RequestMappingError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "RequestMappingError";
+  }
+}
+
 const REQUEST_TIMESTAMP_FORMATTER = new Intl.DateTimeFormat("it-IT", {
   day: "2-digit",
   month: "2-digit",
@@ -87,6 +94,10 @@ function integer(value: unknown): number | null {
   return typeof value === "number" && Number.isSafeInteger(value) ? value : null;
 }
 
+function mappingError(message: string): never {
+  throw new RequestMappingError(message);
+}
+
 export function mapRequestStatus(status: unknown): RequestStatusView {
   switch (status) {
     case "evasa":
@@ -94,8 +105,9 @@ export function mapRequestStatus(status: unknown): RequestStatusView {
     case "evasa_parziale":
       return { label: "Evasa parzialmente", tone: "warning" };
     case "in_preparazione":
-    default:
       return { label: "In preparazione", tone: "pending" };
+    default:
+      return mappingError("Stato richiesta non valido.");
   }
 }
 
@@ -110,21 +122,28 @@ export function remainingQuantity(line: QuantitySummary): number {
 }
 
 function embeddedCount(value: unknown): number {
-  const countRecord = Array.isArray(value) ? value[0] : value;
-  if (!isRecord(countRecord)) return 0;
-  return Math.max(0, integer(countRecord.count) ?? 0);
+  if (!Array.isArray(value) || value.length !== 1 || !isRecord(value[0])) {
+    return mappingError("Conteggio righe richiesta non valido.");
+  }
+  const count = integer(value[0].count);
+  if (count === null || count < 0) {
+    return mappingError("Conteggio righe richiesta non valido.");
+  }
+  return count;
 }
 
 export function mapRequestListRows(rows: readonly unknown[]): RequestListItem[] {
   const items: RequestListItem[] = [];
 
   for (const row of rows) {
-    if (!isRecord(row)) continue;
+    if (!isRecord(row)) mappingError("Riga elenco richieste non valida.");
     const id = text(row.id);
     const requestNumber = integer(row.request_number);
     const requestedAt = text(row.requested_at);
     const project = text(row.project);
-    if (!id || requestNumber === null || !requestedAt || !project) continue;
+    if (!id || requestNumber === null || !requestedAt || !project) {
+      mappingError("Riga elenco richieste non valida.");
+    }
 
     items.push({
       id,
@@ -140,12 +159,14 @@ export function mapRequestListRows(rows: readonly unknown[]): RequestListItem[] 
   return items;
 }
 
-function mapFulfillment(value: unknown): FulfillmentHistoryItem | null {
-  if (!isRecord(value)) return null;
+function mapFulfillment(value: unknown): FulfillmentHistoryItem {
+  if (!isRecord(value)) return mappingError("Evento evasione non valido.");
   const id = text(value.id);
   const quantity = integer(value.quantity);
   const fulfilledAt = text(value.fulfilled_at);
-  if (!id || quantity === null || !fulfilledAt) return null;
+  if (!id || quantity === null || quantity <= 0 || !fulfilledAt) {
+    return mappingError("Evento evasione non valido.");
+  }
 
   return {
     id,
@@ -161,8 +182,8 @@ type MappedRequestLine = {
   createdAt: string;
 };
 
-function mapRequestLine(value: unknown): MappedRequestLine | null {
-  if (!isRecord(value)) return null;
+function mapRequestLine(value: unknown): MappedRequestLine {
+  if (!isRecord(value)) return mappingError("Riga richiesta non valida.");
 
   const id = text(value.id);
   const fabtekCode = text(value.snapshot_fabtek_code);
@@ -191,12 +212,15 @@ function mapRequestLine(value: unknown): MappedRequestLine | null {
     || fulfilledQuantity === null
     || !createdAt
   ) {
-    return null;
+    return mappingError("Riga richiesta non valida.");
   }
 
-  const fulfillments = (Array.isArray(value.fulfillments) ? value.fulfillments : [])
+  if (!Array.isArray(value.fulfillments)) {
+    return mappingError("Relazione eventi evasione non valida.");
+  }
+
+  const fulfillments = value.fulfillments
     .map(mapFulfillment)
-    .filter((item): item is FulfillmentHistoryItem => item !== null)
     .sort((left, right) => (
       left.fulfilledAt.localeCompare(right.fulfilledAt)
       || left.id.localeCompare(right.id)
@@ -226,8 +250,47 @@ function mapRequestLine(value: unknown): MappedRequestLine | null {
   };
 }
 
-export function mapRequestDetail(value: unknown): RequestDetail | null {
-  if (!isRecord(value)) return null;
+export function attachFulfillmentsToLines(
+  lineValues: unknown,
+  fulfillmentValues: unknown,
+): Record<string, unknown>[] {
+  if (!Array.isArray(lineValues) || !Array.isArray(fulfillmentValues)) {
+    return mappingError("Relazioni dettaglio richiesta non valide.");
+  }
+
+  const lines: Record<string, unknown>[] = [];
+  const linesById = new Map<string, Record<string, unknown>>();
+
+  for (const value of lineValues) {
+    if (!isRecord(value)) mappingError("Riga richiesta non valida.");
+    const id = text(value.id);
+    if (!id || linesById.has(id)) mappingError("Riga richiesta non valida.");
+
+    const line = { ...value, fulfillments: [] as unknown[] };
+    mapRequestLine(line);
+    lines.push(line);
+    linesById.set(id, line);
+  }
+
+  const fulfillmentIds = new Set<string>();
+  for (const value of fulfillmentValues) {
+    if (!isRecord(value)) mappingError("Evento evasione non valido.");
+    const requestLineId = text(value.request_line_id);
+    const fulfillment = mapFulfillment(value);
+    const line = requestLineId ? linesById.get(requestLineId) : undefined;
+    if (!line || fulfillmentIds.has(fulfillment.id)) {
+      mappingError("Evento evasione non associabile alla richiesta.");
+    }
+
+    fulfillmentIds.add(fulfillment.id);
+    (line.fulfillments as unknown[]).push(value);
+  }
+
+  return lines;
+}
+
+export function mapRequestDetail(value: unknown): RequestDetail {
+  if (!isRecord(value)) return mappingError("Dettaglio richiesta non valido.");
 
   const id = text(value.id);
   const requestNumber = integer(value.request_number);
@@ -243,12 +306,15 @@ export function mapRequestDetail(value: unknown): RequestDetail | null {
     || !toolLine
     || !utilities
   ) {
-    return null;
+    return mappingError("Dettaglio richiesta non valido.");
   }
 
-  const lines = (Array.isArray(value.lines) ? value.lines : [])
+  if (!Array.isArray(value.lines)) {
+    return mappingError("Relazione righe richiesta non valida.");
+  }
+
+  const lines = value.lines
     .map(mapRequestLine)
-    .filter((line): line is MappedRequestLine => line !== null)
     .sort((left, right) => (
       left.createdAt.localeCompare(right.createdAt)
       || left.data.id.localeCompare(right.data.id)

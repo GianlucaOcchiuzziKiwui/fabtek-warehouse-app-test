@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  attachFulfillmentsToLines,
   formatRequestTimestamp,
   mapRequestDetail,
   mapRequestListRows,
@@ -168,4 +169,107 @@ test("maps list rows with their embedded line count", () => {
       tone: "pending",
     },
   });
+});
+
+test("rejects a missing request-lines relation instead of mapping an empty detail", () => {
+  const rowWithoutLines = { ...requestRow() };
+  delete rowWithoutLines.lines;
+
+  assert.throws(
+    () => mapRequestDetail(rowWithoutLines),
+    { name: "RequestMappingError" },
+  );
+});
+
+test("rejects malformed request lines instead of silently discarding them", () => {
+  assert.throws(
+    () => mapRequestDetail({ ...requestRow(), lines: [{}] }),
+    { name: "RequestMappingError" },
+  );
+});
+
+test("rejects missing or malformed fulfillment relations", () => {
+  const rowWithMissingEvents = requestRow();
+  delete rowWithMissingEvents.lines[0].fulfillments;
+
+  assert.throws(
+    () => mapRequestDetail(rowWithMissingEvents),
+    { name: "RequestMappingError" },
+  );
+  assert.throws(
+    () => mapRequestDetail(requestRow({ fulfillments: [{}] })),
+    { name: "RequestMappingError" },
+  );
+});
+
+test("rejects malformed list rows and missing embedded counts", () => {
+  assert.throws(
+    () => mapRequestListRows([{ id: REQUEST_ID }]),
+    { name: "RequestMappingError" },
+  );
+  assert.throws(
+    () => mapRequestListRows([{
+      id: REQUEST_ID,
+      request_number: 17,
+      requested_at: "2026-08-26T14:30:00.000Z",
+      project: "P-44",
+      status: "in_preparazione",
+    }]),
+    { name: "RequestMappingError" },
+  );
+});
+
+test("associates every separately loaded fulfillment with its request line", () => {
+  const line = { ...requestRow().lines[0] };
+  delete line.fulfillments;
+  const lines = attachFulfillmentsToLines([line], [
+    {
+      ...event({
+        id: "40000000-0000-4000-8000-000000000001",
+        quantity: 3,
+        fulfilledAt: "2026-08-26T15:00:00.000Z",
+      }),
+      request_line_id: LINE_ID,
+    },
+    {
+      ...event({
+        id: "40000000-0000-4000-8000-000000000002",
+        quantity: 4,
+        fulfilledAt: "2026-08-27T09:15:00.000Z",
+      }),
+      request_line_id: LINE_ID,
+    },
+  ]);
+
+  assert.equal(lines.length, 1);
+  assert.deepEqual(lines[0].fulfillments.map((item) => item.quantity), [3, 4]);
+});
+
+test("rejects missing, malformed, or orphaned separately loaded relations", () => {
+  const line = { ...requestRow().lines[0] };
+  delete line.fulfillments;
+
+  assert.throws(
+    () => attachFulfillmentsToLines(undefined, []),
+    { name: "RequestMappingError" },
+  );
+  assert.throws(
+    () => attachFulfillmentsToLines([{}], []),
+    { name: "RequestMappingError" },
+  );
+  assert.throws(
+    () => attachFulfillmentsToLines([line], [{}]),
+    { name: "RequestMappingError" },
+  );
+  assert.throws(
+    () => attachFulfillmentsToLines([line], [{
+      ...event({
+        id: "40000000-0000-4000-8000-000000000003",
+        quantity: 1,
+        fulfilledAt: "2026-08-27T10:00:00.000Z",
+      }),
+      request_line_id: "20000000-0000-4000-8000-000000000099",
+    }]),
+    { name: "RequestMappingError" },
+  );
 });

@@ -2,6 +2,7 @@ import "server-only";
 
 import { requirePermission } from "@/lib/auth/current-profile";
 import {
+  attachFulfillmentsToLines,
   mapRequestDetail,
   mapRequestListRows,
   type FulfillmentHistoryItem,
@@ -9,6 +10,10 @@ import {
   type RequestLineDetail,
   type RequestListItem,
 } from "@/lib/data/request-mappers";
+import {
+  clampPaginationPage,
+  collectPaginatedRows,
+} from "@/lib/data/paginated-query";
 import { createClient } from "@/lib/supabase/server";
 
 export type {
@@ -47,30 +52,34 @@ const REQUEST_DETAIL_SELECT = `
   tool_line,
   utilities,
   notes,
+  status
+`;
+
+const REQUEST_LINE_SELECT = `
+  id,
+  snapshot_fabtek_code,
+  snapshot_oracle_sapio_code,
+  snapshot_category_name,
+  snapshot_family_name,
+  snapshot_component_name,
+  snapshot_description,
+  snapshot_diameter,
+  snapshot_material,
+  snapshot_connection,
+  snapshot_unit_of_measure,
+  requested_quantity,
+  fulfilled_quantity,
   status,
-  lines:material_request_lines(
-    id,
-    snapshot_fabtek_code,
-    snapshot_oracle_sapio_code,
-    snapshot_category_name,
-    snapshot_family_name,
-    snapshot_component_name,
-    snapshot_description,
-    snapshot_diameter,
-    snapshot_material,
-    snapshot_connection,
-    snapshot_unit_of_measure,
-    requested_quantity,
-    fulfilled_quantity,
-    status,
-    created_at,
-    fulfillments:fulfillment_events(
-      id,
-      quantity,
-      fulfilled_at,
-      notes
-    )
-  )
+  created_at
+`;
+
+const FULFILLMENT_SELECT = `
+  id,
+  request_line_id,
+  quantity,
+  fulfilled_at,
+  notes,
+  request_line:material_request_lines!inner()
 `;
 
 function normalizePage(value: unknown) {
@@ -80,11 +89,14 @@ function normalizePage(value: unknown) {
 }
 
 function reportRequestError(operation: string, error: unknown): never {
-  const code = typeof error === "object"
-    && error !== null
-    && "code" in error
-    && typeof error.code === "string"
-    ? error.code
+  const cause = typeof error === "object" && error !== null && "cause" in error
+    ? error.cause
+    : error;
+  const code = typeof cause === "object"
+    && cause !== null
+    && "code" in cause
+    && typeof cause.code === "string"
+    ? cause.code
     : null;
   console.error("Supabase request operation failed", { operation, code });
   throw new RequestDataError();
@@ -94,30 +106,59 @@ export async function listOwnRequests(
   filters: RequestListFilters = {},
 ): Promise<RequestListResult> {
   await requirePermission("requests:read-own");
-  const page = normalizePage(filters.page);
-  const from = (page - 1) * PAGE_SIZE;
+  let page = normalizePage(filters.page);
   const supabase = await createClient();
-  const { data, error, count } = await supabase
-    .from("material_requests")
-    .select(`
-      id,
-      request_number,
-      requested_at,
-      project,
-      status,
-      lines:material_request_lines(count)
-    `, { count: "exact" })
-    .order("requested_at", { ascending: false })
-    .order("request_number", { ascending: false })
-    .range(from, from + PAGE_SIZE - 1);
 
-  if (error) reportRequestError("list own requests", error);
+  async function loadPage(targetPage: number) {
+    const from = (targetPage - 1) * PAGE_SIZE;
+    return supabase
+      .from("material_requests")
+      .select(`
+        id,
+        request_number,
+        requested_at,
+        project,
+        status,
+        lines:material_request_lines(count)
+      `, { count: "exact" })
+      .order("requested_at", { ascending: false })
+      .order("request_number", { ascending: false })
+      .range(from, from + PAGE_SIZE - 1);
+  }
+
+  let response = await loadPage(page);
+  if (response.error) reportRequestError("list own requests", response.error);
+  if (
+    !Array.isArray(response.data)
+    || !Number.isInteger(response.count)
+    || (response.count ?? -1) < 0
+  ) {
+    reportRequestError("validate own requests response", null);
+  }
+
+  const total = response.count as number;
+  const clampedPage = clampPaginationPage(page, total, PAGE_SIZE);
+  if (clampedPage !== page) {
+    page = clampedPage;
+    response = await loadPage(page);
+    if (response.error) reportRequestError("list clamped own requests", response.error);
+    if (!Array.isArray(response.data)) {
+      reportRequestError("validate clamped own requests response", null);
+    }
+  }
+
+  let items: RequestListItem[];
+  try {
+    items = mapRequestListRows(response.data);
+  } catch (error) {
+    return reportRequestError("map own requests", error);
+  }
 
   return {
-    items: mapRequestListRows(data ?? []),
+    items,
     page,
     pageSize: PAGE_SIZE,
-    total: count ?? 0,
+    total,
   };
 }
 
@@ -137,7 +178,32 @@ export async function getRequestDetail(
   if (error) reportRequestError("load request detail", error);
   if (!data) return null;
 
-  const request = mapRequestDetail(data);
-  if (!request) reportRequestError("map request detail", null);
-  return request;
+  try {
+    const [lines, fulfillments] = await Promise.all([
+      collectPaginatedRows(async (from, to) => {
+        const response = await supabase
+          .from("material_request_lines")
+          .select(REQUEST_LINE_SELECT)
+          .eq("request_id", requestId)
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to);
+        return { data: response.data, error: response.error };
+      }),
+      collectPaginatedRows(async (from, to) => {
+        const response = await supabase
+          .from("fulfillment_events")
+          .select(FULFILLMENT_SELECT)
+          .eq("request_line.request_id", requestId)
+          .order("fulfilled_at", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to);
+        return { data: response.data, error: response.error };
+      }),
+    ]);
+    const mappedLines = attachFulfillmentsToLines(lines, fulfillments);
+    return mapRequestDetail({ ...data, lines: mappedLines });
+  } catch (mappingOrQueryError) {
+    return reportRequestError("load complete request detail", mappingOrQueryError);
+  }
 }
