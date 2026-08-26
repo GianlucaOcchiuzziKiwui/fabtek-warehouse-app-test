@@ -1,20 +1,19 @@
 import type { Metadata } from "next";
-import { Noto_Sans, Outfit } from "next/font/google";
+import { IBM_Plex_Sans, Oswald } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import "./globals.css";
-import { cn } from "@/lib/utils";
 
-const headingFont = Outfit({
+const headingFont = Oswald({
   subsets: ["latin"],
   weight: ["500", "600", "700"],
-  variable: "--font-outfit",
+  variable: "--font-oswald",
   display: "swap",
 });
 
-const sansFont = Noto_Sans({
+const sansFont = IBM_Plex_Sans({
   subsets: ["latin"],
   weight: ["400", "500", "600"],
-  variable: "--font-noto-sans",
+  variable: "--font-ibm-plex-sans",
   display: "swap",
 });
 
@@ -24,8 +23,11 @@ const defaultUrl = process.env.VERCEL_URL
 
 export const metadata: Metadata = {
   metadataBase: new URL(defaultUrl),
-  title: "Next.js and Supabase Starter Kit",
-  description: "The fastest way to build apps with Next.js and Supabase",
+  title: {
+    default: "Fabtek Materiali",
+    template: "%s | Fabtek Materiali",
+  },
+  description: "Gestione delle richieste materiali Fabtek.",
 };
 
 export default function RootLayout({
@@ -37,11 +39,7 @@ export default function RootLayout({
     <html
       lang="it"
       suppressHydrationWarning
-      className={cn(
-        "font-sans",
-        sansFont.variable,
-        headingFont.variable
-      )}
+      className={`${sansFont.variable} ${headingFont.variable}`}
     >
       <body>
         <ThemeProvider

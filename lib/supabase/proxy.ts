@@ -2,15 +2,21 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { hasEnvVars } from "../utils";
 
+function isPublicAuthRoute(pathname: string) {
+  return pathname === "/auth" || pathname.startsWith("/auth/");
+}
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
   });
 
-  // If the env vars are not set, skip proxy check. You can remove this
-  // once you setup the project.
+  const isPublicRoute = isPublicAuthRoute(request.nextUrl.pathname);
+
   if (!hasEnvVars) {
-    return supabaseResponse;
+    return isPublicRoute
+      ? supabaseResponse
+      : new NextResponse("Supabase Auth is not configured", { status: 503 });
   }
 
   // With Fluid compute, don't put this client in a global environment
@@ -47,15 +53,10 @@ export async function updateSession(request: NextRequest) {
   const { data } = await supabase.auth.getClaims();
   const user = data?.claims;
 
-  if (
-    request.nextUrl.pathname !== "/" &&
-    !user &&
-    !request.nextUrl.pathname.startsWith("/login") &&
-    !request.nextUrl.pathname.startsWith("/auth")
-  ) {
-    // no user, potentially respond by redirecting the user to the login page
+  if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/auth/login";
+    url.search = "";
     return NextResponse.redirect(url);
   }
 

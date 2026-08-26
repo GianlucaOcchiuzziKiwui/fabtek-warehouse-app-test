@@ -94,8 +94,8 @@
 }
 
 @theme inline {
-  --font-sans: var(--font-noto-sans);
-  --font-heading: var(--font-outfit);
+  --font-sans: var(--font-ibm-plex-sans);
+  --font-heading: var(--font-oswald);
   --color-brand-navy: var(--brand-navy);
   --color-brand-navy-deep: var(--brand-navy-deep);
   --color-brand-copper: var(--brand-copper);
@@ -156,7 +156,7 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background font-sans text-foreground antialiased;
+    @apply min-h-screen bg-background font-sans text-foreground antialiased;
   }
   button:not(:disabled), [role="button"]:not(:disabled) {
     cursor: pointer;
@@ -166,7 +166,7 @@
   }
   h1, h2, h3, h4 {
     @apply font-heading;
-    letter-spacing: 0.0125em;
+    letter-spacing: 0;
   }
   ::selection {
     background: var(--brand-light-blue);
