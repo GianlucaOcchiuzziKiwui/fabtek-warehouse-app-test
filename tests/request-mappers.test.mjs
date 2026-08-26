@@ -6,6 +6,7 @@ import {
   formatRequestTimestamp,
   mapRequestDetail,
   mapRequestListRows,
+  mapManagedRequestListRows,
   mapRequestStatus,
   remainingQuantity,
 } from "../lib/data/request-mappers.ts";
@@ -169,6 +170,46 @@ test("maps list rows with their embedded line count", () => {
       tone: "pending",
     },
   });
+});
+
+test("maps the minimal requester display for the managed request list", () => {
+  const items = mapManagedRequestListRows([{
+    id: REQUEST_ID,
+    request_number: 17,
+    requested_at: "2026-08-26T14:30:00.000Z",
+    project: "P-44",
+    status: "in_preparazione",
+    lines: [{ count: 2 }],
+    requester: { full_name: "Mario Rossi" },
+  }]);
+
+  assert.deepEqual(items[0], {
+    id: REQUEST_ID,
+    requestNumber: 17,
+    requestedAt: "2026-08-26T14:30:00.000Z",
+    requestedAtLabel: "26/08/2026, 16:30",
+    project: "P-44",
+    lineCount: 2,
+    status: {
+      label: "In preparazione",
+      tone: "pending",
+    },
+    requesterName: "Mario Rossi",
+  });
+});
+
+test("rejects managed request rows without a requester display", () => {
+  assert.throws(
+    () => mapManagedRequestListRows([{
+      id: REQUEST_ID,
+      request_number: 17,
+      requested_at: "2026-08-26T14:30:00.000Z",
+      project: "P-44",
+      status: "in_preparazione",
+      lines: [{ count: 2 }],
+    }]),
+    { name: "RequestMappingError" },
+  );
 });
 
 test("rejects a missing request-lines relation instead of mapping an empty detail", () => {

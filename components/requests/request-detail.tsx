@@ -1,4 +1,5 @@
 import { RequestStatusBadge } from "@/components/requests/request-status-badge";
+import { FulfillmentForm } from "@/components/admin/fulfillment-form";
 import type {
   FulfillmentHistoryItem,
   RequestDetail as RequestDetailData,
@@ -42,7 +43,13 @@ function FulfillmentItem({ item }: { item: FulfillmentHistoryItem }) {
   );
 }
 
-function RequestLine({ line }: { line: RequestLineDetail }) {
+function RequestLine({
+  line,
+  canManage,
+}: {
+  line: RequestLineDetail;
+  canManage: boolean;
+}) {
   const technicalDetails = [
     ["Categoria", line.categoryName],
     ["Famiglia", line.familyName],
@@ -95,6 +102,13 @@ function RequestLine({ line }: { line: RequestLineDetail }) {
           </ol>
         )}
       </section>
+
+      {canManage && line.remainingQuantity > 0 ? (
+        <FulfillmentForm
+          requestLineId={line.id}
+          remainingQuantity={line.remainingQuantity}
+        />
+      ) : null}
     </article>
   );
 }
@@ -102,9 +116,11 @@ function RequestLine({ line }: { line: RequestLineDetail }) {
 export function RequestDetail({
   request,
   created = false,
+  canManage = false,
 }: {
   request: RequestDetailData;
   created?: boolean;
+  canManage?: boolean;
 }) {
   return (
     <div className="space-y-6">
@@ -163,7 +179,9 @@ export function RequestDetail({
             {request.lines.length} {request.lines.length === 1 ? "riga" : "righe"}
           </p>
         </div>
-        {request.lines.map((line) => <RequestLine key={line.id} line={line} />)}
+        {request.lines.map((line) => (
+          <RequestLine key={line.id} line={line} canManage={canManage} />
+        ))}
       </section>
     </div>
   );

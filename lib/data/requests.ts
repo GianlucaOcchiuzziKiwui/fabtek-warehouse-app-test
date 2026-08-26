@@ -5,7 +5,9 @@ import {
   attachFulfillmentsToLines,
   mapRequestDetail,
   mapRequestListRows,
+  mapManagedRequestListRows,
   type FulfillmentHistoryItem,
+  type ManagedRequestListItem,
   type RequestDetail,
   type RequestLineDetail,
   type RequestListItem,
@@ -23,10 +25,16 @@ export type {
   RequestDetail,
   RequestLineDetail,
   RequestListItem,
+  ManagedRequestListItem,
 };
 
 export type RequestListFilters = {
   page?: number;
+};
+
+export type ManagedRequestListFilters = RequestListFilters & {
+  query?: string;
+  status?: string;
 };
 
 export type RequestListResult = {
@@ -34,6 +42,10 @@ export type RequestListResult = {
   page: number;
   pageSize: number;
   total: number;
+};
+
+export type ManagedRequestListResult = Omit<RequestListResult, "items"> & {
+  items: ManagedRequestListItem[];
 };
 
 export class RequestDataError extends Error {
@@ -44,7 +56,9 @@ export class RequestDataError extends Error {
 }
 
 const PAGE_SIZE = 20;
+const MAX_QUERY_LENGTH = 120;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const REQUEST_STATUSES = new Set(["in_preparazione", "evasa_parziale", "evasa"]);
 
 const REQUEST_DETAIL_SELECT = `
   id,
@@ -88,6 +102,25 @@ function normalizePage(value: unknown) {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0
     ? value
     : 1;
+}
+
+function normalizeManagedFilters(filters: ManagedRequestListFilters) {
+  const query = typeof filters.query === "string"
+    ? filters.query.trim().slice(0, MAX_QUERY_LENGTH)
+    : "";
+  const status = typeof filters.status === "string" && REQUEST_STATUSES.has(filters.status)
+    ? filters.status
+    : null;
+
+  return { page: normalizePage(filters.page), query, status };
+}
+
+function escapePostgrestSearchPattern(value: string) {
+  const escaped = value
+    .replaceAll("\\", "\\\\")
+    .replaceAll('"', '\\"')
+    .replace(/[%_*]/g, "\\$&");
+  return `"%${escaped}%"`;
 }
 
 function reportRequestError(operation: string, error: unknown): never {
@@ -162,6 +195,73 @@ export async function listOwnRequests(
     pageSize: PAGE_SIZE,
     total,
   };
+}
+
+export async function listManagedRequests(
+  filters: ManagedRequestListFilters = {},
+): Promise<ManagedRequestListResult> {
+  await requirePermission("requests:manage");
+  const normalized = normalizeManagedFilters(filters);
+  let page = getSafePaginationRange(normalized.page, PAGE_SIZE).page;
+  const supabase = await createClient();
+
+  async function loadPage(targetPage: number) {
+    const range = getSafePaginationRange(targetPage, PAGE_SIZE);
+    let query = supabase
+      .from("material_requests")
+      .select(`
+        id,
+        request_number,
+        requested_at,
+        project,
+        status,
+        lines:material_request_lines(count),
+        requester:profiles!material_requests_requester_id_fkey(full_name)
+      `, { count: "exact" })
+      .order("requested_at", { ascending: false })
+      .order("request_number", { ascending: false })
+      .range(range.from, range.to);
+
+    if (normalized.status) query = query.eq("status", normalized.status);
+    if (normalized.query) {
+      const pattern = escapePostgrestSearchPattern(normalized.query);
+      query = query.or(
+        `project.ilike.${pattern},tool_line.ilike.${pattern},utilities.ilike.${pattern}`,
+      );
+    }
+
+    return query;
+  }
+
+  let response = await loadPage(page);
+  if (response.error) reportRequestError("list managed requests", response.error);
+  if (
+    !Array.isArray(response.data)
+    || !Number.isSafeInteger(response.count)
+    || (response.count ?? -1) < 0
+  ) {
+    reportRequestError("validate managed requests response", null);
+  }
+
+  const total = response.count as number;
+  const clampedPage = clampPaginationPage(page, total, PAGE_SIZE);
+  if (clampedPage !== page) {
+    page = clampedPage;
+    response = await loadPage(page);
+    if (response.error) reportRequestError("list clamped managed requests", response.error);
+    if (!Array.isArray(response.data)) {
+      reportRequestError("validate clamped managed requests response", null);
+    }
+  }
+
+  let items: ManagedRequestListItem[];
+  try {
+    items = mapManagedRequestListRows(response.data);
+  } catch (error) {
+    return reportRequestError("map managed requests", error);
+  }
+
+  return { items, page, pageSize: PAGE_SIZE, total };
 }
 
 export async function getRequestDetail(

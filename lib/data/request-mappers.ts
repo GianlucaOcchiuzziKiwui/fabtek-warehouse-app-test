@@ -18,6 +18,10 @@ export type RequestListItem = {
   status: RequestStatusView;
 };
 
+export type ManagedRequestListItem = RequestListItem & {
+  requesterName: string;
+};
+
 export type FulfillmentHistoryItem = {
   id: string;
   quantity: number;
@@ -157,6 +161,25 @@ export function mapRequestListRows(rows: readonly unknown[]): RequestListItem[] 
   }
 
   return items;
+}
+
+export function mapManagedRequestListRows(
+  rows: readonly unknown[],
+): ManagedRequestListItem[] {
+  const items = mapRequestListRows(rows);
+
+  return items.map((item, index) => {
+    const row = rows[index];
+    if (!isRecord(row) || !isRecord(row.requester)) {
+      return mappingError("Richiedente della richiesta non valido.");
+    }
+    const requesterName = text(row.requester.full_name);
+    if (!requesterName) {
+      return mappingError("Richiedente della richiesta non valido.");
+    }
+
+    return { ...item, requesterName };
+  });
 }
 
 function mapFulfillment(value: unknown): FulfillmentHistoryItem {

@@ -1,6 +1,8 @@
 import { RequestDetail } from "@/components/requests/request-detail";
 import { PageHeading } from "@/components/shared/page-heading";
 import { getRequestDetail } from "@/lib/data/requests";
+import { requireCurrentProfile } from "@/lib/auth/current-profile";
+import { isAdmin } from "@/lib/auth/permissions";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
@@ -28,13 +30,17 @@ async function RequestDetailContent({
   searchParams: RequestSearchParams;
 }) {
   const [{ requestId }, query] = await Promise.all([params, searchParams]);
-  const request = await getRequestDetail(requestId);
+  const [request, profile] = await Promise.all([
+    getRequestDetail(requestId),
+    requireCurrentProfile(),
+  ]);
   if (!request) notFound();
 
   return (
     <RequestDetail
       request={request}
       created={firstValue(query.created) === "1"}
+      canManage={isAdmin(profile)}
     />
   );
 }
