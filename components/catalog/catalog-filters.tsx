@@ -12,9 +12,13 @@ const SELECT_STYLES = "h-10 w-full rounded-lg border border-input bg-background 
 export function CatalogFiltersForm({
   filters,
   options,
+  action = "/catalogo",
+  resetHref = "/catalogo",
 }: {
   filters: CatalogFilters;
   options: CatalogFilterOptions;
+  action?: string;
+  resetHref?: string;
 }) {
   const hasFilters = Boolean(
     filters.query
@@ -25,7 +29,7 @@ export function CatalogFiltersForm({
 
   return (
     <form
-      action="/catalogo"
+      action={action}
       method="get"
       className="grid gap-4 rounded-xl border border-border bg-card p-4 shadow-sm lg:grid-cols-4"
     >
@@ -103,7 +107,7 @@ export function CatalogFiltersForm({
         </Button>
         {hasFilters ? (
           <Button asChild type="button" variant="outline" size="icon">
-            <Link href="/catalogo" aria-label="Azzera filtri">
+            <Link href={resetHref} aria-label="Azzera filtri">
               <X aria-hidden="true" />
             </Link>
           </Button>

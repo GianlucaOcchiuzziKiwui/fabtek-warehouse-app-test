@@ -31,7 +31,7 @@ function AppShell({
 }) {
   return (
     <div className="flex min-h-screen flex-col bg-background">
-      <header className="bg-brand-navy text-white">
+      <header data-print-shell="chrome" className="bg-brand-navy text-white">
         <div className="mx-auto flex min-h-16 w-full max-w-[1128px] items-center gap-4 px-4 py-3 sm:px-6">
           <Brand />
           <div className="ml-auto flex min-w-0 items-center gap-2 sm:gap-3">
@@ -72,11 +72,11 @@ function AppShell({
         <AppNavigation isAdmin={Boolean(isAdmin)} />
       </header>
 
-      <main className="mx-auto w-full max-w-[1128px] flex-1 px-4 py-8 sm:px-6">
+      <main data-print-shell="main" className="mx-auto w-full max-w-[1128px] flex-1 px-4 py-8 sm:px-6">
         {children}
       </main>
 
-      <footer className="border-t border-border px-4 py-5 text-center text-xs text-muted-foreground sm:px-6">
+      <footer data-print-shell="chrome" className="border-t border-border px-4 py-5 text-center text-xs text-muted-foreground sm:px-6">
         Fabtek Materiali
       </footer>
     </div>
