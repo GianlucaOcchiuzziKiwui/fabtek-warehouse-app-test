@@ -3,7 +3,7 @@ import type { FulfillRequestInput } from "../requests/contracts";
 import type { ValidationResult } from "../requests/validation";
 
 const MAX_QUANTITY = 999_999;
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const FULFILLMENT_FIELDS = new Set(["requestLineId", "quantity", "idempotencyKey", "notes"]);
 
 function invalid(): ValidationResult<never> {

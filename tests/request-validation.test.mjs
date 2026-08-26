@@ -89,6 +89,19 @@ test("normalizes request notes and rejects malformed identifiers", () => {
   assert.equal(invalid.error.code, "INVALID_REQUEST_HEADER");
 });
 
+test("accepts PostgreSQL UUIDs without an RFC variant in request fields", () => {
+  const result = validateSubmitRequest(request({
+    clientRequestId: "10000000-0000-0000-0000-000000000001",
+    lines: [{
+      itemVariantId: "20000000-0000-0000-0000-000000000001",
+      categoryId: "30000000-0000-0000-0000-000000000001",
+      quantity: 1,
+    }],
+  }));
+
+  assert.equal(result.ok, true);
+});
+
 test("rejects decimal and excessive request quantities", () => {
   const decimal = validateSubmitRequest(request({ lines: [line(1.5)] }));
   const excessive = validateSubmitRequest(request({ lines: [line(1_000_000)] }));
@@ -109,6 +122,17 @@ test("validates and normalizes a fulfillment payload", () => {
 
   assert.equal(result.ok, true);
   assert.equal(result.data.notes, "Ritirato dal reparto");
+});
+
+test("accepts PostgreSQL UUIDs without an RFC variant in fulfillment fields", () => {
+  const result = validateFulfillment({
+    requestLineId: "40000000-0000-0000-0000-000000000001",
+    quantity: 3,
+    idempotencyKey: "50000000-0000-0000-0000-000000000001",
+    notes: null,
+  });
+
+  assert.equal(result.ok, true);
 });
 
 test("rejects fulfillment payloads outside the contract", () => {
