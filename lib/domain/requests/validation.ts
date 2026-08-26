@@ -20,14 +20,18 @@ function isUuid(value: unknown): value is string {
   return typeof value === "string" && UUID_PATTERN.test(value);
 }
 
-function normalizeRequiredText(value: unknown, limit: number): string | null {
+export function isRequiredTextWithinLimit(value: unknown, limit: number): boolean {
   if (typeof value !== "string") {
-    return null;
+    return false;
   }
 
   const normalized = value.trim();
   const characterCount = Array.from(normalized).length;
-  return characterCount > 0 && characterCount <= limit ? normalized : null;
+  return characterCount > 0 && characterCount <= limit;
+}
+
+function normalizeRequiredText(value: unknown, limit: number): string | null {
+  return isRequiredTextWithinLimit(value, limit) ? (value as string).trim() : null;
 }
 
 export function normalizeOptionalNotes(value: unknown, limit?: number): string | null | undefined {

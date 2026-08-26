@@ -3,48 +3,106 @@
 import { submitRequestAction } from "@/app/(app)/richieste/nuova/actions";
 import { useRequestDraft } from "@/components/requests/request-draft-provider";
 import { Button } from "@/components/ui/button";
-import { Send } from "lucide-react";
+import {
+  completeRequestAttempt,
+  failRequestAttempt,
+  getRequestRetryStatus,
+} from "@/lib/domain/requests/attempt-state";
+import { Send, TriangleAlert } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
 export function SubmitRequestButton({ disabled }: { disabled: boolean }) {
   const router = useRouter();
-  const { draft, resetDraft } = useRequestDraft();
+  const {
+    draft,
+    resetDraft,
+    requestAttemptState,
+    startSubmissionAttempt,
+    replaceRequestAttemptState,
+  } = useRequestDraft();
   const [isPending, startTransition] = useTransition();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const retryStatus = getRequestRetryStatus(requestAttemptState, draft.clientRequestId);
 
   function submit() {
-    if (isPending) return;
+    const started = startSubmissionAttempt({
+      clientRequestId: draft.clientRequestId,
+      project: draft.header.project,
+      toolLine: draft.header.toolLine,
+      utilities: draft.header.utilities,
+      notes: draft.header.notes,
+      lines: draft.lines,
+    });
+    if (!started.attempt) return;
 
     setErrorMessage(null);
+    const attempt = started.attempt;
     startTransition(async () => {
-      const result = await submitRequestAction({
-        clientRequestId: draft.clientRequestId,
-        project: draft.header.project,
-        toolLine: draft.header.toolLine,
-        utilities: draft.header.utilities,
-        notes: draft.header.notes,
-        lines: draft.lines,
-      });
+      try {
+        const result = await submitRequestAction(attempt);
 
-      if (!result.ok) {
-        setErrorMessage(result.error.message);
-        return;
+        if (!result.ok) {
+          replaceRequestAttemptState(failRequestAttempt(started.state, result.error.code));
+          setErrorMessage(result.error.message);
+          return;
+        }
+
+        const completed = completeRequestAttempt(
+          started.state,
+          attempt.clientRequestId,
+        );
+        if (completed.phase !== "idle") {
+          replaceRequestAttemptState(failRequestAttempt(started.state, "UNEXPECTED_ERROR"));
+          setErrorMessage("La conferma ricevuta non corrisponde al tentativo corrente. Riprova.");
+          return;
+        }
+
+        replaceRequestAttemptState(completed);
+        resetDraft();
+        router.replace(`/richieste/${result.data.requestId}?created=1`);
+      } catch {
+        replaceRequestAttemptState(failRequestAttempt(started.state, "UNEXPECTED_ERROR"));
+        setErrorMessage("Non Ã¨ stato possibile confermare l'invio. Riprova.");
       }
-
-      resetDraft();
-      router.replace(`/richieste/${result.data.requestId}?created=1`);
     });
   }
+
+  const lockedAttempt = requestAttemptState.phase === "idle"
+    ? null
+    : requestAttemptState.attempt;
+  const canSubmit = retryStatus === "retryable"
+    || (retryStatus === "idle" && !disabled);
+  const label = retryStatus === "submitting" || isPending
+    ? "Invio in corso..."
+    : retryStatus === "retryable"
+      ? "Ritenta stessa richiesta"
+      : retryStatus === "context_changed"
+        ? "Tentativo non ripetibile"
+        : "Invia richiesta";
 
   return (
     <div className="space-y-2">
       {errorMessage ? (
-        <p role="alert" className="text-sm text-destructive">{errorMessage}</p>
+        <p role="alert" className="flex items-start gap-2 text-sm text-destructive">
+          <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+          <span>
+            {errorMessage}
+            {retryStatus === "retryable"
+              ? " Il retry userÃ  gli stessi dati del primo tentativo."
+              : " Riapri la bozza prima di continuare."}
+          </span>
+        </p>
       ) : null}
-      <Button type="button" onClick={submit} disabled={disabled || isPending}>
+      {lockedAttempt ? (
+        <p className="text-sm text-muted-foreground">
+          Tentativo bloccato: progetto {lockedAttempt.project}, {lockedAttempt.lines.length} articol
+          {lockedAttempt.lines.length === 1 ? "o" : "i"}. I campi restano bloccati fino alla conferma.
+        </p>
+      ) : null}
+      <Button type="button" onClick={submit} disabled={!canSubmit || isPending}>
         <Send aria-hidden="true" />
-        {isPending ? "Invio in corso..." : "Invia richiesta"}
+        {label}
       </Button>
     </div>
   );

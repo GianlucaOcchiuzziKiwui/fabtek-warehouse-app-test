@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useReducer,
+  useRef,
   useState,
 } from "react";
 import {
@@ -15,6 +16,12 @@ import {
   type RequestDraftHeader,
   type RequestDraftLine,
 } from "@/lib/domain/requests/draft";
+import {
+  IDLE_REQUEST_ATTEMPT,
+  startRequestAttempt,
+  type RequestAttemptState,
+} from "@/lib/domain/requests/attempt-state";
+import type { SubmitRequestInput } from "@/lib/domain/requests/contracts";
 
 const STORAGE_KEY = "fabtek:material-request-draft:v1";
 
@@ -25,6 +32,13 @@ type RequestDraftContextValue = {
   setQuantity: (itemVariantId: string, quantity: number) => void;
   removeLine: (itemVariantId: string) => void;
   resetDraft: () => void;
+  isSubmissionLocked: boolean;
+  requestAttemptState: RequestAttemptState;
+  startSubmissionAttempt: (input: unknown) => {
+    state: RequestAttemptState;
+    attempt: SubmitRequestInput | null;
+  };
+  replaceRequestAttemptState: (state: RequestAttemptState) => void;
 };
 
 const RequestDraftContext = createContext<RequestDraftContextValue | null>(null);
@@ -32,6 +46,26 @@ const RequestDraftContext = createContext<RequestDraftContextValue | null>(null)
 export function RequestDraftProvider({ children }: { children: React.ReactNode }) {
   const [draft, dispatch] = useReducer(requestDraftReducer, undefined, createEmptyDraft);
   const [isHydrated, setIsHydrated] = useState(false);
+  const [requestAttemptState, setRequestAttemptState] = useState<RequestAttemptState>(
+    IDLE_REQUEST_ATTEMPT,
+  );
+  const requestAttemptStateRef = useRef<RequestAttemptState>(IDLE_REQUEST_ATTEMPT);
+  const isSubmissionLocked = requestAttemptState.phase !== "idle";
+
+  function dispatchDraft(action: Parameters<typeof dispatch>[0]) {
+    if (requestAttemptStateRef.current.phase === "idle") dispatch(action);
+  }
+
+  function replaceRequestAttemptState(state: RequestAttemptState) {
+    requestAttemptStateRef.current = state;
+    setRequestAttemptState(state);
+  }
+
+  function startSubmissionAttempt(input: unknown) {
+    const started = startRequestAttempt(requestAttemptStateRef.current, input);
+    if (started.attempt) replaceRequestAttemptState(started.state);
+    return started;
+  }
 
   useEffect(() => {
     try {
@@ -58,13 +92,14 @@ export function RequestDraftProvider({ children }: { children: React.ReactNode }
 
   const value: RequestDraftContextValue = {
     draft,
-    setHeader: (header) => dispatch({ type: "set-header", header }),
-    addLine: (line) => dispatch({ type: "add-line", line }),
+    setHeader: (header) => dispatchDraft({ type: "set-header", header }),
+    addLine: (line) => dispatchDraft({ type: "add-line", line }),
     setQuantity: (itemVariantId, quantity) => (
-      dispatch({ type: "set-quantity", itemVariantId, quantity })
+      dispatchDraft({ type: "set-quantity", itemVariantId, quantity })
     ),
-    removeLine: (itemVariantId) => dispatch({ type: "remove-line", itemVariantId }),
+    removeLine: (itemVariantId) => dispatchDraft({ type: "remove-line", itemVariantId }),
     resetDraft: () => {
+      if (requestAttemptStateRef.current.phase !== "idle") return;
       try {
         sessionStorage.removeItem(STORAGE_KEY);
       } catch {
@@ -72,6 +107,10 @@ export function RequestDraftProvider({ children }: { children: React.ReactNode }
       }
       dispatch({ type: "reset" });
     },
+    isSubmissionLocked,
+    requestAttemptState,
+    startSubmissionAttempt,
+    replaceRequestAttemptState,
   };
 
   return (

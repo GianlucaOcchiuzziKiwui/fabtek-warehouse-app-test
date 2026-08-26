@@ -219,7 +219,6 @@ export function FulfillmentForm({
             id={notesId}
             name="notes"
             rows={2}
-            maxLength={500}
             value={lockedAttempt ? lockedAttempt.notes : notes}
             onChange={(event) => setNotes(event.target.value)}
             aria-describedby={describedBy}

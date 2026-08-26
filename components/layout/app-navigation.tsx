@@ -14,7 +14,7 @@ export function AppNavigation({ isAdmin }: { isAdmin: boolean }) {
           <Link
             key={href}
             href={href}
-            className="inline-flex shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold text-[#d9e8f7] transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+            className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold text-[#d9e8f7] transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
           >
             <Icon aria-hidden="true" className="size-4" />
             {label}
@@ -22,7 +22,7 @@ export function AppNavigation({ isAdmin }: { isAdmin: boolean }) {
         ))}
         <Link
           href="/richieste"
-          className="inline-flex shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold text-[#d9e8f7] transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+          className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold text-[#d9e8f7] transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
         >
           <ClipboardList aria-hidden="true" className="size-4" />
           Richieste
@@ -30,7 +30,7 @@ export function AppNavigation({ isAdmin }: { isAdmin: boolean }) {
         {isAdmin ? (
           <Link
             href="/admin/richieste"
-            className="inline-flex shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold text-[#d9e8f7] transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+            className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold text-[#d9e8f7] transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
           >
             <Settings2 aria-hidden="true" className="size-4" />
             Gestisci richieste

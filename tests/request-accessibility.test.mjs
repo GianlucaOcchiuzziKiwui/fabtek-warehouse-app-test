@@ -15,3 +15,21 @@ test("catalog-picker quantity errors are programmatically associated with their 
   assert.match(source, /aria-describedby=\{showQuantityError \? quantityErrorId : undefined\}/u);
   assert.match(source, /<p id=\{quantityErrorId\}/u);
 });
+
+test("request retries expose the locked original payload and retry guidance", async () => {
+  const source = await readFile("components/requests/submit-request-button.tsx", "utf8");
+
+  assert.match(source, /role="alert"/u);
+  assert.match(source, /Ritenta stessa richiesta/u);
+  assert.match(source, /stessi dati del primo tentativo/u);
+});
+
+test("request text inputs do not use UTF-16 maxLength limits", async () => {
+  for (const file of [
+    "components/requests/request-header-form.tsx",
+    "components/admin/fulfillment-form.tsx",
+  ]) {
+    const source = await readFile(file, "utf8");
+    assert.doesNotMatch(source, /maxLength=/u, `${file} uses UTF-16 maxLength`);
+  }
+});

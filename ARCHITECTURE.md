@@ -293,8 +293,8 @@ Il modello completo è definito in `products.md`. Le migration saranno organizza
 3. catalogo: categorie, alias esterni, famiglie, componenti, varianti e associazioni molti-a-molti;
 4. unità di misura, riferimenti fornitore e asset tecnici;
 5. staging, batch e issue di import catalogo;
-6. inventario e movimenti, con `item_variants.track_inventory` come sorgente autorevole della modalità illimitata;
-7. richieste e snapshot righe;
+6. inventario e movimenti, con `item_variants.track_inventory` come sorgente autorevole della modalità per le nuove richieste;
+7. richieste e snapshot righe, incluso `snapshot_track_inventory` immutabile;
 8. evasioni;
 9. documenti, notifiche e audit;
 10. funzioni RPC e policy RLS;
@@ -325,28 +325,30 @@ sequenceDiagram
     B->>N: payload + client_request_id
     N->>N: valida sessione, profilo e schema
     N->>P: submit_material_request(...)
-    P->>P: lock inventario tracciato in ordine stabile
+    P->>P: lock advisory su requester + client_request_id
+    P->>P: restituisce subito un eventuale invio precedente
+    P->>P: lock varianti e inventario tracciato in ordine stabile
     P->>P: verifica tutte le varianti e la disponibilità solo se tracciata
     P->>P: assegna progressivo
-    P->>P: crea richiesta e snapshot
+    P->>P: crea richiesta e snapshot, inclusa modalità inventario
     P->>P: prenota quantità e crea movimenti solo per varianti tracciate
     P->>J: accoda PDF/email iniziale
     P-->>N: commit + request_id
     N-->>B: richiesta confermata
 ```
 
-Se una sola variante tracciata non è più disponibile, la RPC esegue rollback completo. Una variante non tracciata è `unlimited` per dato della variante, non per una scelta del client. Lo stesso `client_request_id` restituisce il risultato precedente senza creare duplicati.
+Se una sola variante tracciata non è più disponibile, la RPC esegue rollback completo. Una variante non tracciata è `unlimited` per dato della variante, non per una scelta del client. Lo stesso `client_request_id` è serializzato prima del controllo stock e restituisce il risultato precedente senza creare duplicati.
 
 ### 9.2 Evasione
 
 La RPC `fulfill_request_line`:
 
 1. verifica profilo Admin attivo e `idempotency_key`;
-2. blocca riga e, se la variante è tracciata, inventario;
+2. blocca in ordine richiesta padre, riga e, se lo snapshot della riga è tracciato, inventario;
 3. calcola il residuo dagli eventi;
 4. registra l'evasione;
-5. riduce prenotazione e giacenza solo per una variante tracciata;
-6. registra il movimento solo per una variante tracciata;
+5. riduce prenotazione e giacenza solo per una riga tracciata nello snapshot;
+6. registra il movimento solo per una riga tracciata nello snapshot;
 7. se tutte le righe risultano evase, accoda una sola volta il report finale;
 8. restituisce quantità e stato ricalcolati.
 

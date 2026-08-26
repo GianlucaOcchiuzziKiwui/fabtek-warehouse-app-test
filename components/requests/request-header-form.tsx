@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useRequestDraft } from "@/components/requests/request-draft-provider";
+import { isRequiredTextWithinLimit } from "@/lib/domain/requests/validation";
 import { CheckCircle2, CircleAlert } from "lucide-react";
 
 export function isRequestHeaderComplete(header: {
@@ -12,23 +13,14 @@ export function isRequestHeaderComplete(header: {
   toolLine: string;
   utilities: string;
 }) {
-  const project = header.project.trim();
-  const toolLine = header.toolLine.trim();
-  const utilities = header.utilities.trim();
-
-  return Boolean(
-    project
-    && project.length <= 120
-    && toolLine
-    && toolLine.length <= 120
-    && utilities
-    && utilities.length <= 240,
-  );
+  return isRequiredTextWithinLimit(header.project, 120)
+    && isRequiredTextWithinLimit(header.toolLine, 120)
+    && isRequiredTextWithinLimit(header.utilities, 240);
 }
 
 export function RequestHeaderForm() {
   const { profile } = useProfile();
-  const { draft, setHeader } = useRequestDraft();
+  const { draft, setHeader, isSubmissionLocked } = useRequestDraft();
   const isComplete = isRequestHeaderComplete(draft.header);
 
   return (
@@ -63,7 +55,7 @@ export function RequestHeaderForm() {
             id="request-project"
             value={draft.header.project}
             onChange={(event) => setHeader({ project: event.target.value })}
-            maxLength={120}
+            disabled={isSubmissionLocked}
             required
             autoComplete="off"
           />
@@ -75,7 +67,7 @@ export function RequestHeaderForm() {
             id="request-tool-line"
             value={draft.header.toolLine}
             onChange={(event) => setHeader({ toolLine: event.target.value })}
-            maxLength={120}
+            disabled={isSubmissionLocked}
             required
             autoComplete="off"
           />
@@ -87,7 +79,7 @@ export function RequestHeaderForm() {
             id="request-utilities"
             value={draft.header.utilities}
             onChange={(event) => setHeader({ utilities: event.target.value })}
-            maxLength={240}
+            disabled={isSubmissionLocked}
             required
             autoComplete="off"
           />
@@ -100,6 +92,7 @@ export function RequestHeaderForm() {
             id="request-notes"
             value={draft.header.notes}
             onChange={(event) => setHeader({ notes: event.target.value })}
+            disabled={isSubmissionLocked}
             rows={3}
             className="flex min-h-20 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
           />

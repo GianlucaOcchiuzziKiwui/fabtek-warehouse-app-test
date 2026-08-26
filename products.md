@@ -170,7 +170,7 @@ La quantità parte sempre da `0` e deve essere un intero positivo. Se `track_inv
 - La stessa variante compare al massimo una volta nel carrello; aggiunte successive aggiornano la quantità.
 - Nel riepilogo può modificare le quantità e rimuovere le righe prima dell'invio.
 - Dal riepilogo può generare o stampare una distinta PDF in stato di bozza prima dell'invio.
-- Il carrello non prenota la merce. L'invio crea richiesta e righe, assegna il progressivo e prenota in un'unica transazione soltanto le quantità delle varianti con `track_inventory = true`.
+- Il carrello non prenota la merce. L'invio crea richiesta e righe, congela `track_inventory` in `material_request_lines.snapshot_track_inventory`, assegna il progressivo e prenota in un'unica transazione soltanto le quantità delle varianti tracciate nello snapshot.
 - Se una quantità di una variante tracciata non è più disponibile, l'intera operazione fallisce senza creare una richiesta parziale e il client indica le righe da correggere.
 - Un `client_request_id` UUID, univoco per richiedente, rende l'invio idempotente e impedisce duplicati causati da doppio clic o retry di rete.
 - La richiesta creata ha stato iniziale `IN_PREPARAZIONE`.
@@ -311,7 +311,7 @@ L'archiviazione non è uno stato di evasione: va rappresentata separatamente con
 
 ### 9.1 Disponibilità, prenotazioni e movimenti
 
-La modalità inventario è un dato autorevole della variante: `track_inventory = false` significa disponibilità illimitata e non è un bypass deciso dal client. Solo per una variante tracciata si distinguono:
+La modalità inventario è un dato autorevole della variante: `track_inventory = false` significa disponibilità illimitata e non è un bypass deciso dal client. Al momento dell'invio viene copiata in `material_request_lines.snapshot_track_inventory`: eventuali modifiche successive della variante valgono soltanto per nuove richieste e non possono creare o perdere prenotazioni storiche. Solo per una riga tracciata nello snapshot si distinguono:
 
 - `on_hand_quantity`: quantità fisicamente presente;
 - `reserved_quantity`: quantità impegnata da richieste non ancora evase;
@@ -320,7 +320,7 @@ La modalità inventario è un dato autorevole della variante: `track_inventory =
 Regole:
 
 1. l'invio incrementa `reserved_quantity` solo per varianti tracciate e solo se la disponibilità effettiva è sufficiente per tutte le rispettive righe;
-2. l'evasione di una variante tracciata decrementa `reserved_quantity` e `on_hand_quantity` della stessa quantità; quella non tracciata conserva evento e stati senza mutare l'inventario;
+2. l'evasione di una riga con snapshot tracciato decrementa `reserved_quantity` e `on_hand_quantity` della stessa quantità; quella con snapshot non tracciato conserva evento e stati senza mutare l'inventario, anche se il flag corrente della variante è cambiato;
 3. ogni variazione di inventario crea un movimento immutabile con causale, quantità, operatore, timestamp e riferimento alla richiesta;
 4. `on_hand_quantity` e `reserved_quantity` non possono diventare negative e il prenotato non può superare la giacenza;
 5. la soglia di scorta bassa è configurabile solo per una variante tracciata;
@@ -629,10 +629,10 @@ Le operazioni concorrenti devono essere implementate come funzioni PostgreSQL/RP
 **Invio richiesta**
 
 1. verifica utente attivo, payload e varianti;
-2. blocca in ordine stabile soltanto le righe inventario delle varianti con `track_inventory = true`;
-3. ricontrolla tutte le varianti attive e compatibili e la disponibilità soltanto per quelle tracciate;
+2. serializza per richiedente e `client_request_id`, quindi restituisce subito l'eventuale richiesta già creata;
+3. blocca in ordine stabile varianti e righe inventario con `track_inventory = true` e ricontrolla compatibilità e disponibilità;
 4. assegna il progressivo tramite contatore database;
-5. crea richiesta e snapshot delle righe;
+5. crea richiesta e snapshot delle righe, inclusa la modalità inventario;
 6. incrementa le prenotazioni e registra i movimenti soltanto per le righe tracciate;
 7. accoda documento iniziale e notifica;
 8. esegue commit oppure rollback completo.
@@ -640,11 +640,11 @@ Le operazioni concorrenti devono essere implementate come funzioni PostgreSQL/RP
 **Evasione riga**
 
 1. verifica ruolo Admin e chiave di idempotenza;
-2. blocca riga richiesta e, soltanto per varianti tracciate, inventario;
+2. blocca prima la richiesta padre, poi la riga e, soltanto per righe tracciate nello snapshot, l'inventario;
 3. calcola il residuo dagli eventi registrati;
 4. rifiuta quantità non valida o superiore al residuo;
 5. registra sempre l'evasione e il movimento inventario soltanto per una variante tracciata;
-6. aggiorna prenotato e giacenza soltanto per una variante tracciata;
+6. aggiorna prenotato e giacenza soltanto per una riga tracciata nello snapshot;
 7. se la richiesta diventa completamente evasa, accoda una sola volta report e notifica finale;
 8. esegue commit oppure rollback completo.
 

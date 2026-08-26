@@ -7,6 +7,7 @@ const PRIMARY_FLOW_CONTROL_FILES = [
   "components/requests/add-to-request-button.tsx",
   "components/requests/request-catalog-picker.tsx",
   "components/requests/draft-print-view.tsx",
+  "components/layout/app-navigation.tsx",
 ];
 
 test("primary catalog and request controls keep a 40px minimum target", async () => {
@@ -20,4 +21,10 @@ test("primary catalog and request controls keep a 40px minimum target", async ()
       `${file} uses a button size below 40px`,
     );
   }
+});
+
+test("application navigation links keep a 40px minimum target", async () => {
+  const source = await readFile("components/layout/app-navigation.tsx", "utf8");
+
+  assert.equal(source.match(/min-h-10/g)?.length, 3);
 });

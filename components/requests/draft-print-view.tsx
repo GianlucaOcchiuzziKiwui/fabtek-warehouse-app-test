@@ -116,11 +116,13 @@ function QuantityEditor({
   line,
   validation,
   onChange,
+  disabled,
 }: {
   controlId: string;
   line: ResolvedDraftLine;
   validation: LineValidation;
   onChange: (value: string) => void;
+  disabled: boolean;
 }) {
   const errorId = `${controlId}-error`;
 
@@ -132,6 +134,7 @@ function QuantityEditor({
         type="number"
         value={validation.input}
         onChange={(event) => onChange(event.target.value)}
+        disabled={disabled}
         min={1}
         max={line.stock.trackInventory && line.stock.availableQuantity !== null
           ? line.stock.availableQuantity
@@ -155,10 +158,12 @@ function RemoveLineButton({
   itemVariantId,
   label,
   onRemove,
+  disabled,
 }: {
   itemVariantId: string;
   label: string;
   onRemove: (itemVariantId: string) => void;
+  disabled: boolean;
 }) {
   return (
     <Button
@@ -167,6 +172,7 @@ function RemoveLineButton({
       size="icon"
       aria-label={`Rimuovi ${label}`}
       onClick={() => onRemove(itemVariantId)}
+      disabled={disabled}
     >
       <Trash2 aria-hidden="true" />
     </Button>
@@ -181,7 +187,12 @@ export function DraftPrintView({
   previewDate: string;
 }) {
   const { profile } = useProfile();
-  const { draft, setQuantity, removeLine } = useRequestDraft();
+  const {
+    draft,
+    setQuantity,
+    removeLine,
+    isSubmissionLocked,
+  } = useRequestDraft();
   const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>({});
   const detailsByLine = useMemo(
     () => new Map(details.map((line) => [`${line.itemVariantId}:${line.categoryId}`, line])),
@@ -294,6 +305,7 @@ export function DraftPrintView({
                             itemVariantId={line.itemVariantId}
                             label={`riga ${line.itemVariantId}`}
                             onRemove={removeLine}
+                            disabled={isSubmissionLocked}
                           />
                         </td>
                       </tr>
@@ -320,10 +332,11 @@ export function DraftPrintView({
                           line={line}
                           validation={validation}
                           onChange={(value) => updateQuantity(line, value)}
+                          disabled={isSubmissionLocked}
                         />
                       </td>
                       <td className="px-4 py-4 text-right">
-                        <RemoveLineButton itemVariantId={line.itemVariantId} label={line.partNumber} onRemove={removeLine} />
+                        <RemoveLineButton itemVariantId={line.itemVariantId} label={line.partNumber} onRemove={removeLine} disabled={isSubmissionLocked} />
                       </td>
                     </tr>
                   );
@@ -351,6 +364,7 @@ export function DraftPrintView({
                         itemVariantId={line.itemVariantId}
                         label={`riga ${line.itemVariantId}`}
                         onRemove={removeLine}
+                        disabled={isSubmissionLocked}
                       />
                     </div>
                   </article>
@@ -367,7 +381,7 @@ export function DraftPrintView({
                       <h3 className="mt-1 font-heading text-lg font-semibold">{valueOrDash(line.item)}</h3>
                       <p className="mt-1 text-sm text-muted-foreground">{valueOrDash(line.family)}</p>
                     </div>
-                    <RemoveLineButton itemVariantId={line.itemVariantId} label={line.partNumber} onRemove={removeLine} />
+                    <RemoveLineButton itemVariantId={line.itemVariantId} label={line.partNumber} onRemove={removeLine} disabled={isSubmissionLocked} />
                   </div>
                   <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
                     <div><dt className="text-xs text-muted-foreground">Categoria</dt><dd className="font-medium">{valueOrDash(line.category)}</dd></div>
@@ -380,6 +394,7 @@ export function DraftPrintView({
                     line={line}
                     validation={validation}
                     onChange={(value) => updateQuantity(line, value)}
+                    disabled={isSubmissionLocked}
                   />
                 </article>
               );
@@ -388,7 +403,13 @@ export function DraftPrintView({
         </section>
 
         <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
-          <Button asChild variant="outline"><Link href="/richieste/nuova"><ArrowLeft aria-hidden="true" />Torna alla selezione</Link></Button>
+          {isSubmissionLocked ? (
+            <Button type="button" variant="outline" disabled>
+              <ArrowLeft aria-hidden="true" />Torna alla selezione
+            </Button>
+          ) : (
+            <Button asChild variant="outline"><Link href="/richieste/nuova"><ArrowLeft aria-hidden="true" />Torna alla selezione</Link></Button>
+          )}
           <div className="flex flex-col gap-3 sm:items-end">
             <SubmitRequestButton disabled={!canPrint} />
             <Button type="button" onClick={() => window.print()} disabled={!canPrint}>

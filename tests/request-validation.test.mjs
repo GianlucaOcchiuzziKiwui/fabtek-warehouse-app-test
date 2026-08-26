@@ -3,7 +3,10 @@ import crypto from "node:crypto";
 import test from "node:test";
 
 import { validateFulfillment } from "../lib/domain/fulfillment/validation.ts";
-import { validateSubmitRequest } from "../lib/domain/requests/validation.ts";
+import {
+  isRequiredTextWithinLimit,
+  validateSubmitRequest,
+} from "../lib/domain/requests/validation.ts";
 
 const VARIANT_ID = "20000000-0000-4000-8000-000000000001";
 const CATEGORY_ID = "30000000-0000-4000-8000-000000000001";
@@ -86,6 +89,11 @@ test("counts Unicode code points like PostgreSQL header limits", () => {
   assert.equal(valid.ok, true);
   assert.equal(invalid.ok, false);
   assert.equal(invalid.error.code, "INVALID_REQUEST_HEADER");
+});
+
+test("client header checks use PostgreSQL code-point limits", () => {
+  assert.equal(isRequiredTextWithinLimit("\u{1F527}".repeat(120), 120), true);
+  assert.equal(isRequiredTextWithinLimit("\u{1F527}".repeat(121), 120), false);
 });
 
 test("normalizes request notes and rejects malformed identifiers", () => {

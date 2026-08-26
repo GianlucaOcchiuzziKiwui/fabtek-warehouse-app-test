@@ -1,6 +1,6 @@
 begin;
 
-select plan(12);
+select plan(25);
 
 insert into auth.users (
   instance_id,
@@ -221,6 +221,162 @@ select results_eq(
      where i.item_variant_id = '20000000-0000-0000-0000-000000000002' $$,
   $$ values (8, 2, 2, 1) $$,
   'tracked fulfillment mutates inventory and event history once'
+);
+
+select set_config('request.jwt.claim.sub', '50000000-0000-0000-0000-000000000001', true);
+
+select lives_ok(
+  $$ select * from public.submit_material_request(
+    '10000000-0000-0000-0000-000000000004', 'P-3', 'T-3', 'Utility', null,
+    jsonb_build_array(jsonb_build_object(
+      'item_variant_id', '20000000-0000-0000-0000-000000000002',
+      'category_id', '30000000-0000-0000-0000-000000000001', 'quantity', 2
+    ))
+  ) $$,
+  'tracked transition fixture reserves stock'
+);
+
+select is(
+  (select snapshot_track_inventory from public.material_request_lines
+   where request_id = (
+     select id from public.material_requests
+     where client_request_id = '10000000-0000-0000-0000-000000000004'
+   )),
+  true,
+  'tracked stock semantics are snapshotted on submission'
+);
+
+select lives_ok(
+  $$ select * from public.submit_material_request(
+    '10000000-0000-0000-0000-000000000005', 'P-4', 'T-4', 'Utility', null,
+    jsonb_build_array(jsonb_build_object(
+      'item_variant_id', '20000000-0000-0000-0000-000000000001',
+      'category_id', '30000000-0000-0000-0000-000000000001', 'quantity', 1
+    ))
+  ) $$,
+  'untracked transition fixture remains inventory-free'
+);
+
+select is(
+  (select snapshot_track_inventory from public.material_request_lines
+   where request_id = (
+     select id from public.material_requests
+     where client_request_id = '10000000-0000-0000-0000-000000000005'
+   )),
+  false,
+  'untracked stock semantics are snapshotted on submission'
+);
+
+update public.item_variants
+set track_inventory = not track_inventory
+where id in (
+  '20000000-0000-0000-0000-000000000001',
+  '20000000-0000-0000-0000-000000000002'
+);
+
+select set_config('request.jwt.claim.sub', '50000000-0000-0000-0000-000000000002', true);
+
+select lives_ok(
+  $$ select * from public.fulfill_request_line(
+    (select line.id
+     from public.material_request_lines line
+     join public.material_requests request on request.id = line.request_id
+     where request.client_request_id = '10000000-0000-0000-0000-000000000004'),
+    2, '40000000-0000-0000-0000-000000000004', null
+  ) $$,
+  'tracked request releases its reservation after the variant becomes untracked'
+);
+
+select results_eq(
+  $$ select on_hand_quantity, reserved_quantity
+     from public.inventory
+     where item_variant_id = '20000000-0000-0000-0000-000000000002' $$,
+  $$ values (6, 2) $$,
+  'tracked snapshot controls inventory after a true-to-false transition'
+);
+
+select lives_ok(
+  $$ select * from public.fulfill_request_line(
+    (select line.id
+     from public.material_request_lines line
+     join public.material_requests request on request.id = line.request_id
+     where request.client_request_id = '10000000-0000-0000-0000-000000000005'),
+    1, '40000000-0000-0000-0000-000000000005', null
+  ) $$,
+  'untracked request stays inventory-free after the variant becomes tracked'
+);
+
+select is(
+  (select count(*) from public.inventory_movements
+   where item_variant_id = '20000000-0000-0000-0000-000000000001'),
+  0::bigint,
+  'untracked snapshot creates no movement after a false-to-true transition'
+);
+
+update public.item_variants
+set track_inventory = id = '20000000-0000-0000-0000-000000000002'
+where id in (
+  '20000000-0000-0000-0000-000000000001',
+  '20000000-0000-0000-0000-000000000002'
+);
+
+select set_config('request.jwt.claim.sub', '50000000-0000-0000-0000-000000000001', true);
+
+select lives_ok(
+  $$ select * from public.submit_material_request(
+    '10000000-0000-0000-0000-000000000006', 'P-5', 'T-5', 'Utility', null,
+    jsonb_build_array(
+      jsonb_build_object(
+        'item_variant_id', '20000000-0000-0000-0000-000000000001',
+        'category_id', '30000000-0000-0000-0000-000000000001', 'quantity', 1
+      ),
+      jsonb_build_object(
+        'item_variant_id', '20000000-0000-0000-0000-000000000002',
+        'category_id', '30000000-0000-0000-0000-000000000001', 'quantity', 1
+      )
+    )
+  ) $$,
+  'multi-line request fixture is accepted'
+);
+
+select set_config('request.jwt.claim.sub', '50000000-0000-0000-0000-000000000002', true);
+
+select lives_ok(
+  $$ select * from public.fulfill_request_line(
+    (select line.id from public.material_request_lines line
+     join public.material_requests request on request.id = line.request_id
+     where request.client_request_id = '10000000-0000-0000-0000-000000000006'
+       and line.item_variant_id = '20000000-0000-0000-0000-000000000001'),
+    1, '40000000-0000-0000-0000-000000000006', null
+  ) $$,
+  'first line completion succeeds'
+);
+
+select lives_ok(
+  $$ select * from public.fulfill_request_line(
+    (select line.id from public.material_request_lines line
+     join public.material_requests request on request.id = line.request_id
+     where request.client_request_id = '10000000-0000-0000-0000-000000000006'
+       and line.item_variant_id = '20000000-0000-0000-0000-000000000002'),
+    1, '40000000-0000-0000-0000-000000000007', null
+  ) $$,
+  'second line completion succeeds'
+);
+
+select is(
+  (select status from public.material_requests
+   where client_request_id = '10000000-0000-0000-0000-000000000006'),
+  'evasa'::public.request_status,
+  'the parent request becomes complete after every line is fulfilled'
+);
+
+select is(
+  (select count(*) from public.generated_documents document
+   join public.material_requests request on request.id = document.request_id
+   where request.client_request_id = '10000000-0000-0000-0000-000000000006'
+     and document.document_type = 'final_report'),
+  1::bigint,
+  'a completed multi-line request creates one final report job'
 );
 
 select * from finish();

@@ -311,15 +311,21 @@ export async function searchCatalog(
     catalogQuery = catalogQuery.eq("component_id", normalized.componentId);
   }
 
-  const [catalogResponse, availabilityResponse] = await Promise.all([
-    catalogQuery,
-    supabase.rpc("get_catalog_availability"),
-  ]);
-
+  const catalogResponse = await catalogQuery;
   if (catalogResponse.error) reportCatalogError("search variants", catalogResponse.error);
+  const variantIds = (catalogResponse.data ?? []).flatMap((row) => {
+    const id = isRecord(row) ? text(row.id) : null;
+    return id ? [id] : [];
+  });
+  const availabilityPromise = variantIds.length > 0
+    ? supabase.rpc("get_catalog_availability").in("item_variant_id", variantIds)
+    : Promise.resolve({ data: [], error: null });
+  const [availabilityResponse, signedUrls] = await Promise.all([
+    availabilityPromise,
+    getSignedDatasheetUrls(supabase, catalogResponse.data),
+  ]);
   if (availabilityResponse.error) reportCatalogError("load availability", availabilityResponse.error);
 
-  const signedUrls = await getSignedDatasheetUrls(supabase, catalogResponse.data);
   return {
     items: mapCatalogRows(
       catalogResponse.data ?? [],
