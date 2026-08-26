@@ -4,12 +4,19 @@ import { validateSubmitRequest } from "./validation.ts";
 export type RequestAttemptState =
   | { phase: "idle" }
   | { phase: "submitting"; attempt: SubmitRequestInput }
-  | { phase: "failed"; attempt: SubmitRequestInput; errorCode: string };
+  | { phase: "failed"; attempt: SubmitRequestInput; errorCode: string }
+  | {
+      phase: "blocked";
+      clientRequestId: string;
+      errorCode: string;
+      attempt?: SubmitRequestInput;
+    };
 
 export type RequestRetryStatus =
   | "idle"
   | "submitting"
   | "retryable"
+  | "blocked"
   | "context_changed";
 
 export const IDLE_REQUEST_ATTEMPT: RequestAttemptState = { phase: "idle" };
@@ -20,6 +27,7 @@ export function getRequestRetryStatus(
 ): RequestRetryStatus {
   if (state.phase === "idle") return "idle";
   if (state.phase === "submitting") return "submitting";
+  if (state.phase === "blocked") return "blocked";
   return state.attempt.clientRequestId === clientRequestId
     ? "retryable"
     : "context_changed";
@@ -30,6 +38,7 @@ export function startRequestAttempt(
   draft: unknown,
 ): { state: RequestAttemptState; attempt: SubmitRequestInput | null } {
   if (state.phase === "submitting") return { state, attempt: null };
+  if (state.phase === "blocked") return { state, attempt: null };
 
   if (state.phase === "failed") {
     if (getRequestRetryStatus(state, readClientRequestId(draft)) !== "retryable") {
@@ -61,6 +70,33 @@ export function failRequestAttempt(
   return state.phase === "submitting"
     ? { phase: "failed", attempt: state.attempt, errorCode }
     : state;
+}
+
+export function resolveRequestAttemptError(
+  state: RequestAttemptState,
+  errorCode: string,
+): RequestAttemptState {
+  if (state.phase !== "submitting") return state;
+  if (errorCode === "UNEXPECTED_ERROR") {
+    return failRequestAttempt(state, errorCode);
+  }
+  if (errorCode === "IDEMPOTENCY_PAYLOAD_MISMATCH") {
+    return {
+      phase: "blocked",
+      clientRequestId: state.attempt.clientRequestId,
+      errorCode,
+      attempt: state.attempt,
+    };
+  }
+  return IDLE_REQUEST_ATTEMPT;
+}
+
+export function blockRequestAttempt(
+  clientRequestId: string,
+  errorCode: string,
+  attempt?: SubmitRequestInput,
+): RequestAttemptState {
+  return { phase: "blocked", clientRequestId, errorCode, attempt };
 }
 
 export function completeRequestAttempt(

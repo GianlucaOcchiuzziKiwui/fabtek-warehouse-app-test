@@ -18,6 +18,10 @@ const DATABASE_ERROR_CODES = {
     code: "NOT_FOUND",
     message: "La risorsa richiesta non è disponibile.",
   },
+  "P0004": {
+    code: "IDEMPOTENCY_PAYLOAD_MISMATCH",
+    message: "Questa bozza non corrisponde alla richiesta gi\u00e0 registrata. Apri lo storico richieste.",
+  },
 } as const;
 
 const UNEXPECTED_ERROR: ActionError = {

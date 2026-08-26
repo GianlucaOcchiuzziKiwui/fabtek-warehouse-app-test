@@ -1,6 +1,6 @@
 begin;
 
-select plan(25);
+select plan(29);
 
 insert into auth.users (
   instance_id,
@@ -324,7 +324,7 @@ select set_config('request.jwt.claim.sub', '50000000-0000-0000-0000-000000000001
 
 select lives_ok(
   $$ select * from public.submit_material_request(
-    '10000000-0000-0000-0000-000000000006', 'P-5', 'T-5', 'Utility', null,
+    '10000000-0000-0000-0000-000000000006', ' P-5 ', ' T-5 ', ' Utility ', '   ',
     jsonb_build_array(
       jsonb_build_object(
         'item_variant_id', '20000000-0000-0000-0000-000000000001',
@@ -337,6 +337,80 @@ select lives_ok(
     )
   ) $$,
   'multi-line request fixture is accepted'
+);
+
+select lives_ok(
+  $$ select * from public.submit_material_request(
+    '10000000-0000-0000-0000-000000000006', 'P-5', 'T-5', 'Utility', null,
+    jsonb_build_array(
+      jsonb_build_object(
+        'item_variant_id', '20000000-0000-0000-0000-000000000001',
+        'category_id', '30000000-0000-0000-0000-000000000001', 'quantity', 1
+      ),
+      jsonb_build_object(
+        'item_variant_id', '20000000-0000-0000-0000-000000000002',
+        'category_id', '30000000-0000-0000-0000-000000000001', 'quantity', 1
+      )
+    )
+  ) $$,
+  'same idempotency key and normalized payload returns the existing request'
+);
+
+select throws_ok(
+  $$ select * from public.submit_material_request(
+    '10000000-0000-0000-0000-000000000006', 'P-CHANGED', 'T-5', 'Utility', null,
+    jsonb_build_array(
+      jsonb_build_object(
+        'item_variant_id', '20000000-0000-0000-0000-000000000001',
+        'category_id', '30000000-0000-0000-0000-000000000001', 'quantity', 1
+      ),
+      jsonb_build_object(
+        'item_variant_id', '20000000-0000-0000-0000-000000000002',
+        'category_id', '30000000-0000-0000-0000-000000000001', 'quantity', 1
+      )
+    )
+  ) $$,
+  'P0004',
+  'IDEMPOTENCY_PAYLOAD_MISMATCH',
+  'same idempotency key rejects a changed header'
+);
+
+select throws_ok(
+  $$ select * from public.submit_material_request(
+    '10000000-0000-0000-0000-000000000006', 'P-5', 'T-5', 'Utility', null,
+    jsonb_build_array(
+      jsonb_build_object(
+        'item_variant_id', '20000000-0000-0000-0000-000000000001',
+        'category_id', '30000000-0000-0000-0000-000000000001', 'quantity', 2
+      ),
+      jsonb_build_object(
+        'item_variant_id', '20000000-0000-0000-0000-000000000002',
+        'category_id', '30000000-0000-0000-0000-000000000001', 'quantity', 1
+      )
+    )
+  ) $$,
+  'P0004',
+  'IDEMPOTENCY_PAYLOAD_MISMATCH',
+  'same idempotency key rejects a changed line'
+);
+
+select throws_ok(
+  $$ select * from public.submit_material_request(
+    '10000000-0000-0000-0000-000000000006', 'P-5', 'T-5', 'Utility', null,
+    jsonb_build_array(
+      jsonb_build_object(
+        'item_variant_id', '20000000-0000-0000-0000-000000000002',
+        'category_id', '30000000-0000-0000-0000-000000000001', 'quantity', 1
+      ),
+      jsonb_build_object(
+        'item_variant_id', '20000000-0000-0000-0000-000000000001',
+        'category_id', '30000000-0000-0000-0000-000000000001', 'quantity', 1
+      )
+    )
+  ) $$,
+  'P0004',
+  'IDEMPOTENCY_PAYLOAD_MISMATCH',
+  'same idempotency key rejects changed line order'
 );
 
 select set_config('request.jwt.claim.sub', '50000000-0000-0000-0000-000000000002', true);

@@ -27,6 +27,10 @@ test("maps known PostgreSQL errors to stable client-safe errors", () => {
     code: "NOT_FOUND",
     message: "La risorsa richiesta non è disponibile.",
   });
+  assert.deepEqual(toActionError({ code: "P0004", message: "stored payload details" }), {
+    code: "IDEMPOTENCY_PAYLOAD_MISMATCH",
+    message: "Questa bozza non corrisponde alla richiesta gi\u00e0 registrata. Apri lo storico richieste.",
+  });
 });
 
 test("does not expose unknown database error messages", () => {

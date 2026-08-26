@@ -9,6 +9,7 @@ const REQUEST_UI_FILES = [
   "app/(app)/richieste/[requestId]/not-found.tsx",
   "app/(app)/richieste/[requestId]/page.tsx",
   "components/requests/request-detail.tsx",
+  "components/requests/submit-request-button.tsx",
 ];
 
 test("request UI copy does not contain UTF-8 mojibake", async () => {

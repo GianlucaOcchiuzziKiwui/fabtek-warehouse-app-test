@@ -326,7 +326,7 @@ sequenceDiagram
     N->>N: valida sessione, profilo e schema
     N->>P: submit_material_request(...)
     P->>P: lock advisory su requester + client_request_id
-    P->>P: restituisce subito un eventuale invio precedente
+    P->>P: confronta payload normalizzato con l'eventuale invio precedente
     P->>P: lock varianti e inventario tracciato in ordine stabile
     P->>P: verifica tutte le varianti e la disponibilità solo se tracciata
     P->>P: assegna progressivo
@@ -337,7 +337,7 @@ sequenceDiagram
     N-->>B: richiesta confermata
 ```
 
-Se una sola variante tracciata non è più disponibile, la RPC esegue rollback completo. Una variante non tracciata è `unlimited` per dato della variante, non per una scelta del client. Lo stesso `client_request_id` è serializzato prima del controllo stock e restituisce il risultato precedente senza creare duplicati.
+Se una sola variante tracciata non è più disponibile, la RPC esegue rollback completo. Una variante non tracciata è `unlimited` per dato della variante, non per una scelta del client. Lo stesso `client_request_id` è serializzato prima del controllo stock e restituisce il risultato precedente soltanto quando intestazione e righe ordinate coincidono. Browser e server persistono e confrontano il payload normalizzato; un esito di trasporto ambiguo resta ritentabile con i dati immutabili, mentre un conflitto porta allo storico richieste senza cancellare la bozza.
 
 ### 9.2 Evasione
 

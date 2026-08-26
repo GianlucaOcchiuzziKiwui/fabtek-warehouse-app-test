@@ -6,6 +6,7 @@ import {
   failRequestAttempt,
   getRequestRetryStatus,
   IDLE_REQUEST_ATTEMPT,
+  resolveRequestAttemptError,
   startRequestAttempt,
 } from "../lib/domain/requests/attempt-state.ts";
 
@@ -97,4 +98,55 @@ test("invalid drafts cannot create an attempt", () => {
 
   assert.equal(started.attempt, null);
   assert.deepEqual(started.state, IDLE_REQUEST_ATTEMPT);
+});
+
+test("definitive action errors unlock the unchanged draft for correction", () => {
+  const started = startRequestAttempt(IDLE_REQUEST_ATTEMPT, draft());
+
+  for (const errorCode of [
+    "INSUFFICIENT_STOCK",
+    "INVALID_INPUT",
+    "INVALID_REQUEST_LINES",
+    "FORBIDDEN",
+  ]) {
+    assert.deepEqual(
+      resolveRequestAttemptError(started.state, errorCode),
+      IDLE_REQUEST_ATTEMPT,
+    );
+  }
+
+  const corrected = startRequestAttempt(
+    resolveRequestAttemptError(started.state, "INSUFFICIENT_STOCK"),
+    draft({
+      lines: [{
+        itemVariantId: VARIANT_ID,
+        categoryId: CATEGORY_ID,
+        quantity: 1,
+      }],
+    }),
+  );
+  assert.equal(corrected.attempt?.clientRequestId, CLIENT_REQUEST_ID);
+  assert.equal(corrected.attempt?.lines[0]?.quantity, 1);
+});
+
+test("only ambiguous action results retain a retryable immutable attempt", () => {
+  const started = startRequestAttempt(IDLE_REQUEST_ATTEMPT, draft());
+  const failed = resolveRequestAttemptError(started.state, "UNEXPECTED_ERROR");
+
+  assert.equal(failed.phase, "failed");
+  assert.deepEqual(failed.attempt, started.attempt);
+  assert.equal(getRequestRetryStatus(failed, CLIENT_REQUEST_ID), "retryable");
+});
+
+test("an idempotency payload mismatch blocks reuse and preserves recovery context", () => {
+  const started = startRequestAttempt(IDLE_REQUEST_ATTEMPT, draft());
+  const blocked = resolveRequestAttemptError(
+    started.state,
+    "IDEMPOTENCY_PAYLOAD_MISMATCH",
+  );
+
+  assert.equal(blocked.phase, "blocked");
+  assert.equal(blocked.clientRequestId, CLIENT_REQUEST_ID);
+  assert.deepEqual(blocked.attempt, started.attempt);
+  assert.equal(getRequestRetryStatus(blocked, CLIENT_REQUEST_ID), "blocked");
 });

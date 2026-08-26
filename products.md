@@ -173,6 +173,7 @@ La quantità parte sempre da `0` e deve essere un intero positivo. Se `track_inv
 - Il carrello non prenota la merce. L'invio crea richiesta e righe, congela `track_inventory` in `material_request_lines.snapshot_track_inventory`, assegna il progressivo e prenota in un'unica transazione soltanto le quantità delle varianti tracciate nello snapshot.
 - Se una quantità di una variante tracciata non è più disponibile, l'intera operazione fallisce senza creare una richiesta parziale e il client indica le righe da correggere.
 - Un `client_request_id` UUID, univoco per richiedente, rende l'invio idempotente e impedisce duplicati causati da doppio clic o retry di rete.
+- Browser e server legano la chiave al payload normalizzato completo: la bozza e un tentativo ambiguo sono salvati insieme in `localStorage`, il retry riusa gli stessi dati e un payload differente con la stessa chiave viene rifiutato indicando lo storico richieste.
 - La richiesta creata ha stato iniziale `IN_PREPARAZIONE`.
 - Dopo l'invio, la richiesta non deve essere modificabile dal richiedente.
 
@@ -579,6 +580,7 @@ La coppia (`requester_id`, `client_request_id`) è univoca. `Utilities` è testo
 - selected_category_id
 - snapshot_part_number
 - snapshot codice Oracle, categoria selezionata, famiglia, descrizione, diametro, materiale, connessione e unità di misura
+- posizione immutabile della riga nel payload normalizzato
 - quantita_richiesta
 - quantita_evasa derivabile dalla somma degli eventi
 
@@ -629,7 +631,7 @@ Le operazioni concorrenti devono essere implementate come funzioni PostgreSQL/RP
 **Invio richiesta**
 
 1. verifica utente attivo, payload e varianti;
-2. serializza per richiedente e `client_request_id`, quindi restituisce subito l'eventuale richiesta già creata;
+2. serializza per richiedente e `client_request_id`, quindi restituisce l'eventuale richiesta già creata solo se intestazione e righe ordinate coincidono con il payload normalizzato;
 3. blocca in ordine stabile varianti e righe inventario con `track_inventory = true` e ricontrolla compatibilità e disponibilità;
 4. assegna il progressivo tramite contatore database;
 5. crea richiesta e snapshot delle righe, inclusa la modalità inventario;
@@ -813,7 +815,7 @@ Sono rimandabili:
 3. Non si può inviare una richiesta vuota o con campi obbligatori mancanti.
 4. Non si può aggiungere una quantità zero, negativa o decimale; per una variante tracciata non può superare la disponibilità, mentre una variante non tracciata è indicata come `unlimited` senza quantità fittizia.
 5. Due invii concorrenti non possono prenotare oltre la giacenza delle sole varianti tracciate.
-6. Un retry con lo stesso `client_request_id` restituisce la richiesta già creata senza duplicarla.
+6. Un retry con lo stesso `client_request_id` e lo stesso payload normalizzato restituisce la richiesta già creata senza duplicarla; un payload differente viene rifiutato in modo stabile.
 7. Una richiesta inviata riceve progressivo univoco e stato iniziale corretto.
 8. L'Admin può evadere una riga in più passaggi senza superare il residuo.
 9. Due evasioni concorrenti non possono superare il residuo o rendere negative giacenza e prenotazione delle sole varianti tracciate.

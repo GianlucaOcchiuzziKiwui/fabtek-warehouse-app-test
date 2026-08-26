@@ -10,7 +10,6 @@ import {
 } from "react";
 import {
   createEmptyDraft,
-  parsePersistedRequestDraft,
   requestDraftReducer,
   type RequestDraft,
   type RequestDraftHeader,
@@ -22,8 +21,13 @@ import {
   type RequestAttemptState,
 } from "@/lib/domain/requests/attempt-state";
 import type { SubmitRequestInput } from "@/lib/domain/requests/contracts";
+import {
+  parsePersistedRequestFlow,
+  serializeRequestFlow,
+} from "@/lib/domain/requests/flow-storage";
 
-const STORAGE_KEY = "fabtek:material-request-draft:v1";
+const STORAGE_KEY = "fabtek:material-request-flow:v1";
+const LEGACY_SESSION_STORAGE_KEY = "fabtek:material-request-draft:v1";
 
 type RequestDraftContextValue = {
   draft: RequestDraft;
@@ -39,6 +43,7 @@ type RequestDraftContextValue = {
     attempt: SubmitRequestInput | null;
   };
   replaceRequestAttemptState: (state: RequestAttemptState) => void;
+  isHydrated: boolean;
 };
 
 const RequestDraftContext = createContext<RequestDraftContextValue | null>(null);
@@ -50,6 +55,7 @@ export function RequestDraftProvider({ children }: { children: React.ReactNode }
     IDLE_REQUEST_ATTEMPT,
   );
   const requestAttemptStateRef = useRef<RequestAttemptState>(IDLE_REQUEST_ATTEMPT);
+  const isHydratedRef = useRef(false);
   const isSubmissionLocked = requestAttemptState.phase !== "idle";
 
   function dispatchDraft(action: Parameters<typeof dispatch>[0]) {
@@ -59,23 +65,55 @@ export function RequestDraftProvider({ children }: { children: React.ReactNode }
   function replaceRequestAttemptState(state: RequestAttemptState) {
     requestAttemptStateRef.current = state;
     setRequestAttemptState(state);
+    if (isHydratedRef.current) {
+      try {
+        localStorage.setItem(STORAGE_KEY, serializeRequestFlow(draft, state));
+      } catch {
+        // The in-memory lock remains authoritative while this page is open.
+      }
+    }
   }
 
   function startSubmissionAttempt(input: unknown) {
+    if (!isHydratedRef.current) {
+      return { state: requestAttemptStateRef.current, attempt: null };
+    }
     const started = startRequestAttempt(requestAttemptStateRef.current, input);
-    if (started.attempt) replaceRequestAttemptState(started.state);
+    if (started.attempt) {
+      try {
+        localStorage.setItem(STORAGE_KEY, serializeRequestFlow(draft, started.state));
+      } catch {
+        const blockedState: RequestAttemptState = {
+          phase: "blocked",
+          clientRequestId: draft.clientRequestId,
+          errorCode: "LOCAL_STORAGE_UNAVAILABLE",
+          attempt: started.attempt,
+        };
+        requestAttemptStateRef.current = blockedState;
+        setRequestAttemptState(blockedState);
+        return { state: blockedState, attempt: null };
+      }
+      requestAttemptStateRef.current = started.state;
+      setRequestAttemptState(started.state);
+    }
     return started;
   }
 
   useEffect(() => {
     try {
-      const restored = parsePersistedRequestDraft(sessionStorage.getItem(STORAGE_KEY));
+      const restored = parsePersistedRequestFlow(localStorage.getItem(STORAGE_KEY));
       if (restored) {
-        dispatch({ type: "hydrate", draft: restored });
+        dispatch({ type: "hydrate", draft: restored.draft });
+        requestAttemptStateRef.current = restored.attemptState;
+        setRequestAttemptState(restored.attemptState);
+      } else {
+        localStorage.removeItem(STORAGE_KEY);
       }
+      sessionStorage.removeItem(LEGACY_SESSION_STORAGE_KEY);
     } catch {
       // A blocked or unavailable browser storage must not stop the request flow.
     } finally {
+      isHydratedRef.current = true;
       setIsHydrated(true);
     }
   }, []);
@@ -84,11 +122,14 @@ export function RequestDraftProvider({ children }: { children: React.ReactNode }
     if (!isHydrated) return;
 
     try {
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(draft));
+      localStorage.setItem(
+        STORAGE_KEY,
+        serializeRequestFlow(draft, requestAttemptState),
+      );
     } catch {
       // The in-memory draft remains usable when browser storage is unavailable.
     }
-  }, [draft, isHydrated]);
+  }, [draft, isHydrated, requestAttemptState]);
 
   const value: RequestDraftContextValue = {
     draft,
@@ -101,7 +142,7 @@ export function RequestDraftProvider({ children }: { children: React.ReactNode }
     resetDraft: () => {
       if (requestAttemptStateRef.current.phase !== "idle") return;
       try {
-        sessionStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(STORAGE_KEY);
       } catch {
         // A blocked or unavailable browser storage must not stop the request flow.
       }
@@ -111,6 +152,7 @@ export function RequestDraftProvider({ children }: { children: React.ReactNode }
     requestAttemptState,
     startSubmissionAttempt,
     replaceRequestAttemptState,
+    isHydrated,
   };
 
   return (

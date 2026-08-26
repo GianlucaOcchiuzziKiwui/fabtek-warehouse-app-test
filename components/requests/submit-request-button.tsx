@@ -7,8 +7,10 @@ import {
   completeRequestAttempt,
   failRequestAttempt,
   getRequestRetryStatus,
+  resolveRequestAttemptError,
 } from "@/lib/domain/requests/attempt-state";
 import { Send, TriangleAlert } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
@@ -20,6 +22,7 @@ export function SubmitRequestButton({ disabled }: { disabled: boolean }) {
     requestAttemptState,
     startSubmissionAttempt,
     replaceRequestAttemptState,
+    isHydrated,
   } = useRequestDraft();
   const [isPending, startTransition] = useTransition();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -43,7 +46,10 @@ export function SubmitRequestButton({ disabled }: { disabled: boolean }) {
         const result = await submitRequestAction(attempt);
 
         if (!result.ok) {
-          replaceRequestAttemptState(failRequestAttempt(started.state, result.error.code));
+          replaceRequestAttemptState(resolveRequestAttemptError(
+            started.state,
+            result.error.code,
+          ));
           setErrorMessage(result.error.message);
           return;
         }
@@ -63,21 +69,24 @@ export function SubmitRequestButton({ disabled }: { disabled: boolean }) {
         router.replace(`/richieste/${result.data.requestId}?created=1`);
       } catch {
         replaceRequestAttemptState(failRequestAttempt(started.state, "UNEXPECTED_ERROR"));
-        setErrorMessage("Non Ã¨ stato possibile confermare l'invio. Riprova.");
+        setErrorMessage("Non \u00e8 stato possibile confermare l'invio. Riprova.");
       }
     });
   }
 
-  const lockedAttempt = requestAttemptState.phase === "idle"
-    ? null
-    : requestAttemptState.attempt;
+  const lockedAttempt = requestAttemptState.phase === "submitting"
+    || requestAttemptState.phase === "failed"
+    ? requestAttemptState.attempt
+    : requestAttemptState.phase === "blocked"
+      ? requestAttemptState.attempt ?? null
+      : null;
   const canSubmit = retryStatus === "retryable"
-    || (retryStatus === "idle" && !disabled);
+    || (retryStatus === "idle" && !disabled && isHydrated);
   const label = retryStatus === "submitting" || isPending
     ? "Invio in corso..."
     : retryStatus === "retryable"
       ? "Ritenta stessa richiesta"
-      : retryStatus === "context_changed"
+      : retryStatus === "context_changed" || retryStatus === "blocked"
         ? "Tentativo non ripetibile"
         : "Invia richiesta";
 
@@ -89,10 +98,32 @@ export function SubmitRequestButton({ disabled }: { disabled: boolean }) {
           <span>
             {errorMessage}
             {retryStatus === "retryable"
-              ? " Il retry userÃ  gli stessi dati del primo tentativo."
-              : " Riapri la bozza prima di continuare."}
+              ? " Il retry user\u00e0 gli stessi dati del primo tentativo."
+              : retryStatus === "idle"
+                ? " Correggi la bozza e riprova."
+                : " Controlla lo storico richieste prima di continuare."}
           </span>
         </p>
+      ) : null}
+      {!errorMessage && retryStatus === "retryable" ? (
+        <p role="status" className="flex items-start gap-2 text-sm text-destructive">
+          <TriangleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+          <span>
+            L&apos;esito del tentativo precedente non è confermato. Ritenta: saranno
+            usati gli stessi dati del primo tentativo.
+          </span>
+        </p>
+      ) : null}
+      {retryStatus === "blocked" ? (
+        <div role="status" className="space-y-2 text-sm text-destructive">
+          <p>
+            Questa bozza non pu\u00f2 riutilizzare in sicurezza la chiave di invio.
+            Controlla nello storico se la richiesta \u00e8 gi\u00e0 stata registrata.
+          </p>
+          <Button asChild variant="outline">
+            <Link href="/richieste">Apri storico richieste</Link>
+          </Button>
+        </div>
       ) : null}
       {lockedAttempt ? (
         <p className="text-sm text-muted-foreground">
