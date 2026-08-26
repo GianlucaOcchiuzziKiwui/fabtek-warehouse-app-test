@@ -156,12 +156,12 @@ Ogni variante selezionabile deve mostrare almeno:
 - unità di misura;
 - produttore/fornitore e relativo codice articolo, quando disponibili;
 - eventuali altre caratteristiche tecniche;
-- disponibilità effettiva a magazzino;
-- stato visivo della disponibilità: disponibile, scorta bassa o esaurito;
+- disponibilità effettiva a magazzino, solo se `track_inventory = true`;
+- stato visivo della disponibilità: `unlimited` se `track_inventory = false`; altrimenti disponibile, scorta bassa o esaurito;
 - collegamento al datasheet del produttore;
 - quantità richiesta.
 
-La quantità parte sempre da `0`, deve essere un intero positivo e non può superare la disponibilità effettiva. Un articolo esaurito resta consultabile ma non può essere aggiunto alla richiesta.
+La quantità parte sempre da `0` e deve essere un intero positivo. Se `track_inventory = true`, non può superare la disponibilità effettiva e un articolo esaurito resta consultabile ma non può essere aggiunto alla richiesta; se è `false`, la variante è autorevolmente `unlimited` e non richiede una riga inventario.
 
 ### 6.4 Carrello e riepilogo
 
@@ -170,8 +170,8 @@ La quantità parte sempre da `0`, deve essere un intero positivo e non può supe
 - La stessa variante compare al massimo una volta nel carrello; aggiunte successive aggiornano la quantità.
 - Nel riepilogo può modificare le quantità e rimuovere le righe prima dell'invio.
 - Dal riepilogo può generare o stampare una distinta PDF in stato di bozza prima dell'invio.
-- Il carrello non prenota la merce. L'invio crea richiesta e righe, assegna il progressivo e prenota tutte le quantità in un'unica transazione database.
-- Se una quantità non è più disponibile, l'intera operazione fallisce senza creare una richiesta parziale e il client indica le righe da correggere.
+- Il carrello non prenota la merce. L'invio crea richiesta e righe, assegna il progressivo e prenota in un'unica transazione soltanto le quantità delle varianti con `track_inventory = true`.
+- Se una quantità di una variante tracciata non è più disponibile, l'intera operazione fallisce senza creare una richiesta parziale e il client indica le righe da correggere.
 - Un `client_request_id` UUID, univoco per richiedente, rende l'invio idempotente e impedisce duplicati causati da doppio clic o retry di rete.
 - La richiesta creata ha stato iniziale `IN_PREPARAZIONE`.
 - Dopo l'invio, la richiesta non deve essere modificabile dal richiedente.
@@ -838,8 +838,8 @@ Sono rimandabili:
 
 Decisioni confermate:
 
-- la richiesta prenota immediatamente la disponibilità al momento dell'invio;
-- gli articoli esauriti non possono essere richiesti;
+- la richiesta prenota immediatamente la disponibilità al momento dell'invio soltanto per varianti con `track_inventory = true`; quelle non tracciate sono autorevolmente `unlimited` e non generano prenotazioni;
+- gli articoli esauriti tracciati non possono essere richiesti;
 - da **Cerca info materiali** si può iniziare una richiesta senza ripetere la navigazione;
 - colonne e filtri della lista richieste seguono `mock.html`;
 - il progressivo è gestito dal database e non dalla UI;
