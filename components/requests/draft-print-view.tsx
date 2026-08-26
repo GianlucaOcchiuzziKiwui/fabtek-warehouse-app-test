@@ -5,6 +5,7 @@ import { isRequestHeaderComplete } from "@/components/requests/request-header-fo
 import { useRequestDraft } from "@/components/requests/request-draft-provider";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
+import { SubmitRequestButton } from "@/components/requests/submit-request-button";
 import { canAddDraftLine } from "@/lib/domain/requests/line-rules";
 import { ArrowLeft, Printer, Trash2 } from "lucide-react";
 import Link from "next/link";
@@ -383,10 +384,13 @@ export function DraftPrintView({
 
         <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
           <Button asChild variant="outline"><Link href="/richieste/nuova"><ArrowLeft aria-hidden="true" />Torna alla selezione</Link></Button>
-          <Button type="button" onClick={() => window.print()} disabled={!canPrint}>
-            <Printer aria-hidden="true" />
-            Stampa distinta bozza
-          </Button>
+          <div className="flex flex-col gap-3 sm:items-end">
+            <SubmitRequestButton disabled={!canPrint} />
+            <Button type="button" onClick={() => window.print()} disabled={!canPrint}>
+              <Printer aria-hidden="true" />
+              Stampa distinta bozza
+            </Button>
+          </div>
         </div>
       </div>
 
