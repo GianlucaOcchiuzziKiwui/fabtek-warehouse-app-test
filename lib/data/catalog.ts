@@ -368,7 +368,7 @@ export async function getCatalogVariantSelections(
 
   const [catalogResponse, availabilityResponse] = await Promise.all([
     catalogQuery,
-    supabase.rpc("get_catalog_availability"),
+    supabase.rpc("get_catalog_availability").in("item_variant_id", variantIds),
   ]);
 
   if (catalogResponse.error) reportCatalogError("load variants", catalogResponse.error);
