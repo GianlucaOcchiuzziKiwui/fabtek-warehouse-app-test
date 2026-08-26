@@ -273,7 +273,7 @@ Adattamenti obbligatori:
 |---|---|---|---|
 | `profiles` | legge il proprio profilo | legge tutti | solo `full_name` proprio, se previsto |
 | catalogo attivo | legge | legge e gestisce | Admin-only per CRUD semplice |
-| disponibilità | legge una view sicura | legge inventario completo | no |
+| disponibilità | legge `get_catalog_availability()` con flag autorevole `track_inventory`, stato e quantità solo se tracciata | legge inventario completo e configura il flag per variante | no |
 | `material_requests` | legge le proprie | legge tutte | no, solo RPC |
 | `material_request_lines` | legge righe delle proprie richieste | legge tutte | no, solo RPC |
 | `fulfillment_events` | legge eventi delle proprie richieste | legge tutti | no, solo RPC Admin |
@@ -293,7 +293,7 @@ Il modello completo è definito in `products.md`. Le migration saranno organizza
 3. catalogo: categorie, alias esterni, famiglie, componenti, varianti e associazioni molti-a-molti;
 4. unità di misura, riferimenti fornitore e asset tecnici;
 5. staging, batch e issue di import catalogo;
-6. inventario e movimenti;
+6. inventario e movimenti, con `item_variants.track_inventory` come sorgente autorevole della modalità illimitata;
 7. richieste e snapshot righe;
 8. evasioni;
 9. documenti, notifiche e audit;
@@ -325,28 +325,28 @@ sequenceDiagram
     B->>N: payload + client_request_id
     N->>N: valida sessione, profilo e schema
     N->>P: submit_material_request(...)
-    P->>P: lock inventario in ordine stabile
-    P->>P: verifica tutte le disponibilità
+    P->>P: lock inventario tracciato in ordine stabile
+    P->>P: verifica tutte le varianti e la disponibilità solo se tracciata
     P->>P: assegna progressivo
     P->>P: crea richiesta e snapshot
-    P->>P: prenota quantità e crea movimenti
+    P->>P: prenota quantità e crea movimenti solo per varianti tracciate
     P->>J: accoda PDF/email iniziale
     P-->>N: commit + request_id
     N-->>B: richiesta confermata
 ```
 
-Se una sola riga non è più disponibile, la RPC esegue rollback completo. Lo stesso `client_request_id` restituisce il risultato precedente senza creare duplicati.
+Se una sola variante tracciata non è più disponibile, la RPC esegue rollback completo. Una variante non tracciata è `unlimited` per dato della variante, non per una scelta del client. Lo stesso `client_request_id` restituisce il risultato precedente senza creare duplicati.
 
 ### 9.2 Evasione
 
 La RPC `fulfill_request_line`:
 
 1. verifica profilo Admin attivo e `idempotency_key`;
-2. blocca riga ed inventario;
+2. blocca riga e, se la variante è tracciata, inventario;
 3. calcola il residuo dagli eventi;
 4. registra l'evasione;
-5. riduce prenotazione e giacenza;
-6. registra il movimento;
+5. riduce prenotazione e giacenza solo per una variante tracciata;
+6. registra il movimento solo per una variante tracciata;
 7. se tutte le righe risultano evase, accoda una sola volta il report finale;
 8. restituisce quantità e stato ricalcolati.
 
@@ -479,14 +479,14 @@ Il provider di deploy non è ancora deciso. Questo documento non autorizza alcun
 ### Fase 1 — Fondazioni dati e sicurezza
 
 - migration profili, ruoli, trigger e helper RLS;
-- migration catalogo, inventario e seed;
+- migration catalogo, inventario, `track_inventory` per variante e seed;
 - policy e test RLS;
 - DAL e autorizzazione server.
 
 ### Fase 2 — Catalogo e richieste
 
 - navigazione/ricerca catalogo;
-- gestione inventario Admin;
+- gestione inventario Admin, comprese la modalità tracciata o illimitata per variante;
 - carrello e distinta bozza;
 - RPC di invio con prenotazione atomica;
 - liste e dettaglio richieste.

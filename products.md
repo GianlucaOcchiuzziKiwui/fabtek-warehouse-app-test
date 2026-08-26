@@ -311,7 +311,7 @@ L'archiviazione non è uno stato di evasione: va rappresentata separatamente con
 
 ### 9.1 Disponibilità, prenotazioni e movimenti
 
-La richiesta prenota il materiale al momento dell'invio. Per ogni variante si distinguono:
+La modalità inventario è un dato autorevole della variante: `track_inventory = false` significa disponibilità illimitata e non è un bypass deciso dal client. Solo per una variante tracciata si distinguono:
 
 - `on_hand_quantity`: quantità fisicamente presente;
 - `reserved_quantity`: quantità impegnata da richieste non ancora evase;
@@ -319,13 +319,13 @@ La richiesta prenota il materiale al momento dell'invio. Per ogni variante si di
 
 Regole:
 
-1. l'invio incrementa `reserved_quantity` solo se la disponibilità effettiva è sufficiente per tutte le righe;
-2. l'evasione decrementa `reserved_quantity` e `on_hand_quantity` della stessa quantità;
-3. ogni variazione crea un movimento immutabile con causale, quantità, operatore, timestamp e riferimento alla richiesta;
+1. l'invio incrementa `reserved_quantity` solo per varianti tracciate e solo se la disponibilità effettiva è sufficiente per tutte le rispettive righe;
+2. l'evasione di una variante tracciata decrementa `reserved_quantity` e `on_hand_quantity` della stessa quantità; quella non tracciata conserva evento e stati senza mutare l'inventario;
+3. ogni variazione di inventario crea un movimento immutabile con causale, quantità, operatore, timestamp e riferimento alla richiesta;
 4. `on_hand_quantity` e `reserved_quantity` non possono diventare negative e il prenotato non può superare la giacenza;
-5. la soglia di scorta bassa è configurabile per variante;
-6. una futura cancellazione o riduzione di richieste non evase dovrà liberare la prenotazione nella stessa transazione;
-7. non è previsto un bypass di produzione che consenta di richiedere quantità non disponibili.
+5. la soglia di scorta bassa è configurabile solo per una variante tracciata;
+6. una futura cancellazione o riduzione di richieste non evase dovrà liberare la prenotazione nella stessa transazione, solo quando esiste una prenotazione;
+7. `get_catalog_availability()` espone `track_inventory`, `available_quantity`, soglia e stato: per una variante non tracciata restituisce `available_quantity = null` e `stock_status = unlimited`, senza quantità fittizie.
 
 ## 10. Chiusura, report finale, archiviazione ed eliminazione
 
@@ -629,22 +629,22 @@ Le operazioni concorrenti devono essere implementate come funzioni PostgreSQL/RP
 **Invio richiesta**
 
 1. verifica utente attivo, payload e varianti;
-2. blocca le righe inventario interessate in ordine stabile;
-3. ricontrolla tutte le disponibilità;
+2. blocca in ordine stabile soltanto le righe inventario delle varianti con `track_inventory = true`;
+3. ricontrolla tutte le varianti attive e compatibili e la disponibilità soltanto per quelle tracciate;
 4. assegna il progressivo tramite contatore database;
 5. crea richiesta e snapshot delle righe;
-6. incrementa le prenotazioni e registra i movimenti;
+6. incrementa le prenotazioni e registra i movimenti soltanto per le righe tracciate;
 7. accoda documento iniziale e notifica;
 8. esegue commit oppure rollback completo.
 
 **Evasione riga**
 
 1. verifica ruolo Admin e chiave di idempotenza;
-2. blocca riga richiesta e inventario;
+2. blocca riga richiesta e, soltanto per varianti tracciate, inventario;
 3. calcola il residuo dagli eventi registrati;
 4. rifiuta quantità non valida o superiore al residuo;
-5. registra evasione e movimento inventario;
-6. aggiorna prenotato e giacenza;
+5. registra sempre l'evasione e il movimento inventario soltanto per una variante tracciata;
+6. aggiorna prenotato e giacenza soltanto per una variante tracciata;
 7. se la richiesta diventa completamente evasa, accoda una sola volta report e notifica finale;
 8. esegue commit oppure rollback completo.
 
@@ -656,10 +656,10 @@ Il client non deve concatenare più scritture per simulare queste transazioni.
 - Il ruolo deriva dal profilo utente e non è selezionabile dal client.
 - Uno User vede solo dati e richieste di propria competenza.
 - Una richiesta contiene solo varianti attive del catalogo.
-- La quantità richiesta deve essere un intero positivo e non può superare la disponibilità.
-- L'invio prenota tutte le righe oppure non crea nulla.
+- La quantità richiesta deve essere un intero positivo e non può superare la disponibilità per una variante con `track_inventory = true`; una variante non tracciata è autorevolmente illimitata.
+- L'invio prenota tutte le righe tracciate oppure non crea nulla; il client non può selezionare o aggirare questa modalità.
 - Una nuova evasione non può eccedere il residuo.
-- Ogni evasione conserva data, operatore e movimento inventario.
+- Ogni evasione conserva data e operatore; conserva anche un movimento inventario se e solo se la variante è tracciata.
 - Gli stati sono calcolati, non liberamente editabili.
 - Il progressivo e i nomi dei documenti sono generati lato server/database.
 - Invio email e generazione PDF sono tracciati, idempotenti e ritentabili.
@@ -811,13 +811,13 @@ Sono rimandabili:
 1. Uno User non può vedere o modificare richieste altrui, anche chiamando direttamente API o database.
 2. Un utente disattivato non può eseguire operazioni applicative.
 3. Non si può inviare una richiesta vuota o con campi obbligatori mancanti.
-4. Non si può aggiungere una quantità zero, negativa, decimale o superiore alla disponibilità.
-5. Due invii concorrenti non possono prenotare oltre la giacenza.
+4. Non si può aggiungere una quantità zero, negativa o decimale; per una variante tracciata non può superare la disponibilità, mentre una variante non tracciata è indicata come `unlimited` senza quantità fittizia.
+5. Due invii concorrenti non possono prenotare oltre la giacenza delle sole varianti tracciate.
 6. Un retry con lo stesso `client_request_id` restituisce la richiesta già creata senza duplicarla.
 7. Una richiesta inviata riceve progressivo univoco e stato iniziale corretto.
 8. L'Admin può evadere una riga in più passaggi senza superare il residuo.
-9. Due evasioni concorrenti non possono superare il residuo o rendere negative giacenza e prenotazione.
-10. Ogni consegna appare nella cronologia con data server e operatore.
+9. Due evasioni concorrenti non possono superare il residuo o rendere negative giacenza e prenotazione delle sole varianti tracciate.
+10. Ogni consegna appare nella cronologia con data server e operatore, anche per varianti non tracciate.
 11. Lo stato di riga e richiesta cambia automaticamente secondo le quantità.
 12. Lo User vede gli aggiornamenti delle proprie richieste.
 13. Al completamento viene accodato una sola volta il report finale.
