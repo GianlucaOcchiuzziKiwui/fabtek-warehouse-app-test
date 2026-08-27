@@ -25,6 +25,8 @@ test("step 4 item rows keep both mock actions", async () => {
 
   assert.match(addButton, /Data Sheet/u);
   assert.match(addButton, /"Aggiungi"/u);
+  assert.match(addButton, /aria-label="Riduci quantit/u);
+  assert.match(addButton, /aria-label="Aumenta quantit/u);
 });
 
 test("table cells stay outside the interactive client boundary", async () => {

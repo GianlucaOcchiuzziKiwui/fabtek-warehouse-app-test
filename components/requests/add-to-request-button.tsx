@@ -3,8 +3,11 @@
 import { Button } from "@/components/ui/button";
 import { useRequestDraft } from "@/components/requests/request-draft-provider";
 import { isRequestHeaderComplete } from "@/components/requests/request-header-form";
-import { canAddDraftLine } from "@/lib/domain/requests/line-rules";
-import { Check, Plus } from "lucide-react";
+import {
+  canAddDraftLine,
+  stepDraftQuantity,
+} from "@/lib/domain/requests/line-rules";
+import { Check, Minus, Plus } from "lucide-react";
 import { useState } from "react";
 
 const SELECT_STYLES = "h-10 min-w-0 rounded-lg border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25";
@@ -37,6 +40,9 @@ export function RequestItemRowControls({
   const [quantityValue, setQuantityValue] = useState("0");
   const [wasAdded, setWasAdded] = useState(false);
   const quantity = Number(quantityValue);
+  const maximumQuantity = stock.trackInventory
+    ? stock.availableQuantity ?? 0
+    : 999_999;
   const validation = canAddDraftLine({ stock }, quantity);
   const headerIsComplete = isRequestHeaderComplete(draft.header);
   const showQuantityError = headerIsComplete
@@ -51,8 +57,13 @@ export function RequestItemRowControls({
     setWasAdded(true);
   }
 
+  function stepQuantity(delta: -1 | 1) {
+    setQuantityValue(String(stepDraftQuantity(quantityValue, delta, maximumQuantity)));
+    setWasAdded(false);
+  }
+
   return (
-    <div className={`grid items-start gap-x-3 ${fixedCategory ? "grid-cols-[4rem_auto]" : "grid-cols-[9rem_auto]"}`}>
+    <div className={`grid items-start gap-x-3 ${fixedCategory ? "grid-cols-[8rem_auto]" : "grid-cols-[9rem_auto]"}`}>
       <div>
         {fixedCategory ? (
           <span className="sr-only">Categoria: {fixedCategory.name}</span>
@@ -79,24 +90,46 @@ export function RequestItemRowControls({
           </div>
         )}
         <label htmlFor={`request-quantity-${itemVariantId}`} className="sr-only">Quantità</label>
-        <input
-          id={`request-quantity-${itemVariantId}`}
-          type="number"
-          value={quantityValue}
-          onChange={(event) => {
-            setQuantityValue(event.target.value);
-            setWasAdded(false);
-          }}
-          min={1}
-          max={stock.trackInventory && stock.availableQuantity !== null
-            ? stock.availableQuantity
-            : 999_999}
-          step={1}
-          inputMode="numeric"
-          aria-invalid={showQuantityError}
-          aria-describedby={showQuantityError ? quantityErrorId : undefined}
-          className="h-10 w-16 rounded-md border border-input bg-background px-2 text-center font-mono text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25"
-        />
+        <div className="inline-flex items-center">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="rounded-r-none"
+            onClick={() => stepQuantity(-1)}
+            disabled={quantity <= 0}
+            aria-label="Riduci quantità"
+          >
+            <Minus aria-hidden="true" />
+          </Button>
+          <input
+            id={`request-quantity-${itemVariantId}`}
+            type="number"
+            value={quantityValue}
+            onChange={(event) => {
+              setQuantityValue(event.target.value);
+              setWasAdded(false);
+            }}
+            min={0}
+            max={maximumQuantity}
+            step={1}
+            inputMode="numeric"
+            aria-invalid={showQuantityError}
+            aria-describedby={showQuantityError ? quantityErrorId : undefined}
+            className="h-10 w-12 rounded-none border-y border-input bg-background px-1 text-center font-mono text-sm outline-none focus-visible:relative focus-visible:z-10 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="rounded-l-none"
+            onClick={() => stepQuantity(1)}
+            disabled={quantity >= maximumQuantity}
+            aria-label="Aumenta quantità"
+          >
+            <Plus aria-hidden="true" />
+          </Button>
+        </div>
       </div>
       <div>
         <div className="flex items-center gap-2">

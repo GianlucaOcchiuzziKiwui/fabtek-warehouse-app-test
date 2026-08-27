@@ -22,6 +22,20 @@ export type DraftLineValidationResult =
 
 const MAX_QUANTITY = 999_999;
 
+export function stepDraftQuantity(
+  currentValue: string,
+  delta: -1 | 1,
+  maximum: number,
+) {
+  const parsedValue = Number(currentValue);
+  const currentQuantity = Number.isInteger(parsedValue) ? parsedValue : 0;
+  const safeMaximum = Number.isInteger(maximum)
+    ? Math.min(Math.max(maximum, 0), MAX_QUANTITY)
+    : MAX_QUANTITY;
+
+  return Math.min(Math.max(currentQuantity + delta, 0), safeMaximum);
+}
+
 export function canAddDraftLine(
   line: DraftLineAvailability,
   requestedQuantity: number,

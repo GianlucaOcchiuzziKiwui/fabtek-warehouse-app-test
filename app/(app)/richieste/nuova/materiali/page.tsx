@@ -1,4 +1,3 @@
-import { CartSummary } from "@/components/requests/cart-summary";
 import { RequestCatalogPicker } from "@/components/requests/request-catalog-picker";
 import { RequestMaterialsGate } from "@/components/requests/request-header-form";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -114,7 +113,7 @@ export default async function RequestMaterialsPage({ searchParams }: { searchPar
   });
 
   return (
-    <div className="space-y-8 pb-24 lg:pb-3">
+    <div className="space-y-8">
       <div className="flex flex-col items-start justify-between gap-4 sm:flex-row">
         <PageHeading
           title="Scegli i prodotti"
@@ -125,12 +124,9 @@ export default async function RequestMaterialsPage({ searchParams }: { searchPar
         </Button>
       </div>
       <RequestMaterialsGate>
-        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
-          <Suspense fallback={<RequestCatalogLoading />}>
-            <RequestCatalogContent params={params} />
-          </Suspense>
-          <CartSummary />
-        </div>
+        <Suspense fallback={<RequestCatalogLoading />}>
+          <RequestCatalogContent params={params} />
+        </Suspense>
       </RequestMaterialsGate>
     </div>
   );

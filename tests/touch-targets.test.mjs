@@ -6,6 +6,7 @@ const PRIMARY_FLOW_CONTROL_FILES = [
   "components/catalog/catalog-results.tsx",
   "components/requests/add-to-request-button.tsx",
   "components/requests/request-catalog-picker.tsx",
+  "components/requests/request-cart-header.tsx",
   "components/requests/draft-print-view.tsx",
   "components/layout/app-navigation.tsx",
 ];

@@ -3,6 +3,7 @@ import { ProfileProvider } from "@/components/auth/profile-context";
 import { AppNavigation } from "@/components/layout/app-navigation";
 import { LogoutButton } from "@/components/logout-button";
 import { RequestDraftProvider } from "@/components/requests/request-draft-provider";
+import { RequestCartHeader } from "@/components/requests/request-cart-header";
 import { requireCurrentProfile } from "@/lib/auth/current-profile";
 import { ShieldCheck, UserRound } from "lucide-react";
 import { Suspense } from "react";
@@ -14,7 +15,9 @@ async function AuthenticatedApp({ children }: { children: React.ReactNode }) {
   return (
     <ProfileProvider profile={profile}>
       <RequestDraftProvider key={profile.id} ownerId={profile.id}>
-        <AppShell fullName={profile.full_name} isAdmin={isAdmin(profile)}>{children}</AppShell>
+        <AppShell fullName={profile.full_name} isAdmin={isAdmin(profile)} showRequestCart>
+          {children}
+        </AppShell>
       </RequestDraftProvider>
     </ProfileProvider>
   );
@@ -24,10 +27,12 @@ function AppShell({
   children,
   fullName,
   isAdmin,
+  showRequestCart = false,
 }: {
   children?: React.ReactNode;
   fullName?: string;
   isAdmin?: boolean;
+  showRequestCart?: boolean;
 }) {
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -35,6 +40,11 @@ function AppShell({
         <div className="mx-auto flex min-h-16 w-full max-w-[1128px] items-center gap-4 px-4 py-3 sm:px-6">
           <Brand />
           <div className="ml-auto flex min-w-0 items-center gap-2 sm:gap-3">
+            {showRequestCart ? (
+              <Suspense fallback={null}>
+                <RequestCartHeader />
+              </Suspense>
+            ) : null}
             {fullName ? (
               <div className="flex min-w-0 items-center gap-2">
                 <span className="max-w-20 truncate text-xs text-[#cfe0f5] sm:max-w-64 sm:text-sm">
