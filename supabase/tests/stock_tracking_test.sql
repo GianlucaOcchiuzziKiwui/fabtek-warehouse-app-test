@@ -1,6 +1,6 @@
 begin;
 
-select plan(29);
+select plan(33);
 
 insert into auth.users (
   instance_id,
@@ -53,8 +53,29 @@ values ('30000000-0000-0000-0000-000000000001', 'STOCK_TEST', 'Stock test catego
 insert into public.families (id, source_code, name)
 values ('60000000-0000-0000-0000-000000000001', 'STOCK_TEST', 'Stock test family');
 
-insert into public.category_families (category_id, family_id)
-values ('30000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001');
+select hasnt_table(
+  'public',
+  'category_families',
+  'category-family compatibility is not persisted'
+);
+
+select hasnt_function(
+  'public',
+  'validate_item_variant_category',
+  'item-category writes do not depend on a category-family table'
+);
+
+select hasnt_function(
+  'public',
+  'validate_component_family_change',
+  'component family changes are independent from item categories'
+);
+
+select hasnt_function(
+  'public',
+  'validate_variant_component_change',
+  'variant component changes preserve categories without compatibility lookup'
+);
 
 insert into public.components (id, family_id, name)
 values ('70000000-0000-0000-0000-000000000001', '60000000-0000-0000-0000-000000000001', 'Stock test component');
