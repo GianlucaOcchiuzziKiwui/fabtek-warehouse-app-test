@@ -7,6 +7,7 @@ import {
   resolveCatalogNavigationStep,
   type CatalogFilterOptions,
   type CatalogFilters,
+  type CatalogIconKey,
   type CatalogNavigationKind,
   type CatalogNavigationMatch,
   type CatalogOption,
@@ -40,65 +41,41 @@ import Form from "next/form";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-const TILE_ICON_RULES: Record<
-  CatalogNavigationKind,
-  readonly { pattern: RegExp; icon: LucideIcon }[]
-> = {
-  category: [
-    { pattern: /coax/u, icon: CircleGauge },
-    { pattern: /gas/u, icon: Cylinder },
-    { pattern: /cooling/u, icon: Snowflake },
-    { pattern: /water/u, icon: Droplets },
-    { pattern: /exhaust/u, icon: Wind },
-    { pattern: /waste/u, icon: Waves },
-    { pattern: /chemical/u, icon: FlaskConical },
-    { pattern: /vacuum|vuoto/u, icon: Gauge },
-    { pattern: /clean room/u, icon: Sparkles },
-    { pattern: /lim|general/u, icon: Factory },
-  ],
-  family: [
-    { pattern: /tubo|flessibil/u, icon: Cable },
-    { pattern: /fitting|raccord/u, icon: GitBranch },
-    { pattern: /valvol/u, icon: Wrench },
-    { pattern: /pression/u, icon: Gauge },
-    { pattern: /instrument/u, icon: CircleGauge },
-    { pattern: /guarnizion/u, icon: CircleDot },
-    { pattern: /accessor/u, icon: Boxes },
-  ],
-  component: [
-    { pattern: /valvol/u, icon: Wrench },
-    { pattern: /pression/u, icon: Gauge },
-    { pattern: /tubo|flessibil/u, icon: Cable },
-    { pattern: /fitting|raccord/u, icon: GitBranch },
-    { pattern: /elettr|automat/u, icon: Plug },
-    { pattern: /strument|instrument/u, icon: CircleGauge },
-  ],
-};
-
-const FALLBACK_TILE_ICONS: Record<CatalogNavigationKind, LucideIcon> = {
-  category: Factory,
-  family: Boxes,
+const TILE_ICONS: Record<CatalogIconKey, LucideIcon> = {
+  boxes: Boxes,
+  cable: Cable,
+  "circle-dot": CircleDot,
+  "circle-gauge": CircleGauge,
   component: Component,
+  cylinder: Cylinder,
+  droplets: Droplets,
+  factory: Factory,
+  "flask-conical": FlaskConical,
+  gauge: Gauge,
+  "git-branch": GitBranch,
+  "package-search": PackageSearch,
+  plug: Plug,
+  snowflake: Snowflake,
+  sparkles: Sparkles,
+  waves: Waves,
+  wind: Wind,
+  wrench: Wrench,
 };
-
-function tileIcon(kind: CatalogNavigationKind, name: string): LucideIcon {
-  const normalizedName = name.toLocaleLowerCase("it-IT");
-  return TILE_ICON_RULES[kind].find(({ pattern }) => pattern.test(normalizedName))?.icon
-    ?? FALLBACK_TILE_ICONS[kind];
-}
 
 function CatalogTile({
   href,
   kind,
+  iconKey,
   title,
   context,
 }: {
   href: string;
   kind: CatalogNavigationKind;
+  iconKey: CatalogIconKey;
   title: string;
   context?: string;
 }) {
-  const Icon = tileIcon(kind, title);
+  const Icon = TILE_ICONS[iconKey];
 
   return (
     <Link
@@ -185,6 +162,7 @@ function NavigationCards({
             key={item.id}
             href={buildCatalogNavigationHref(basePath, match)}
             kind={kind}
+            iconKey={item.iconKey}
             title={item.name}
           />
         );
@@ -234,6 +212,7 @@ function SearchResults({
                     key={[kind, match.category.id, match.family?.id, match.component?.id].filter(Boolean).join(":")}
                     href={buildCatalogNavigationHref(basePath, match)}
                     kind={kind}
+                    iconKey={current.iconKey}
                     title={current.name}
                     context={context.length > 0 ? context.join(" → ") : undefined}
                   />

@@ -3,6 +3,7 @@ import "server-only";
 import { requirePermission } from "@/lib/auth/current-profile";
 import {
   mapCatalogNavigationMatches,
+  mapCatalogOptions,
   mapCatalogSelections,
   mapCatalogRows,
   normalizeCatalogSelectionInputs,
@@ -59,11 +60,12 @@ const CATALOG_SELECT = `
   component:components!inner(
     id,
     name,
-    family:families!inner(id, name)
+    icon_key,
+    family:families!inner(id, name, icon_key)
   ),
   unit_of_measure:units_of_measure!inner(code, name),
   categories:item_variant_categories!inner(
-    category:categories!inner(id, name)
+    category:categories!inner(id, name, icon_key)
   ),
   suppliers:item_variant_suppliers(
     supplier_part_number,
@@ -83,11 +85,12 @@ const CATALOG_SELECTION_SELECT = `
   component:components!inner(
     id,
     name,
-    family:families!inner(id, name)
+    icon_key,
+    family:families!inner(id, name, icon_key)
   ),
   unit_of_measure:units_of_measure!inner(code, name),
   categories:item_variant_categories!inner(
-    category:categories!inner(id, name)
+    category:categories!inner(id, name, icon_key)
   )
 `;
 
@@ -148,23 +151,6 @@ function text(value: unknown): string | null {
   return normalized || null;
 }
 
-function mapOptions(rows: unknown, relation?: string): CatalogOption[] {
-  if (!Array.isArray(rows)) return [];
-
-  const options = new Map<string, CatalogOption>();
-  for (const row of rows) {
-    if (!isRecord(row)) continue;
-    const value = relation && isRecord(row[relation]) ? row[relation] : row;
-    if (!isRecord(value)) continue;
-
-    const id = text(value.id);
-    const name = text(value.name);
-    if (id && name) options.set(id, { id, name });
-  }
-
-  return [...options.values()];
-}
-
 function collectDatasheetStoragePaths(rows: unknown) {
   const paths = new Set<string>();
   if (!Array.isArray(rows)) return paths;
@@ -222,7 +208,7 @@ export async function getCatalogFilters(
 
   const categoriesQuery = supabase
     .from("categories")
-    .select("id, name, sort_order")
+    .select("id, name, icon_key, sort_order")
     .eq("is_active", true)
     .order("sort_order")
     .order("name");
@@ -230,7 +216,7 @@ export async function getCatalogFilters(
   const familiesQuery = normalized.categoryId
     ? supabase
         .from("category_families")
-        .select("family:families!inner(id, name, sort_order, is_active), category:categories!inner(id, is_active)")
+        .select("family:families!inner(id, name, icon_key, sort_order, is_active), category:categories!inner(id, is_active)")
         .eq("category_id", normalized.categoryId)
         .eq("is_active", true)
         .eq("family.is_active", true)
@@ -241,7 +227,7 @@ export async function getCatalogFilters(
   const componentsQuery = normalized.categoryId && normalized.familyId
     ? supabase
         .from("components")
-        .select("id, name, sort_order, family:families!inner(id, is_active)")
+        .select("id, name, icon_key, sort_order, family:families!inner(id, is_active)")
         .eq("family_id", normalized.familyId)
         .eq("is_active", true)
         .eq("family.is_active", true)
@@ -259,9 +245,10 @@ export async function getCatalogFilters(
   if (familiesResponse.error) reportCatalogError("load families", familiesResponse.error);
   if (componentsResponse.error) reportCatalogError("load components", componentsResponse.error);
 
-  const categories = mapOptions(categoriesResponse.data);
-  const families = mapOptions(
+  const categories = mapCatalogOptions(categoriesResponse.data, "factory");
+  const families = mapCatalogOptions(
     familiesResponse.data,
+    "boxes",
     normalized.categoryId ? "family" : undefined,
   );
   const familyIsSelectable = !normalized.familyId
@@ -271,7 +258,7 @@ export async function getCatalogFilters(
     categories,
     families,
     components: familyIsSelectable
-      ? mapOptions(componentsResponse.data)
+      ? mapCatalogOptions(componentsResponse.data, "component")
       : [],
   };
 }
@@ -288,14 +275,14 @@ export async function searchCatalogNavigation(
   const [categoriesResponse, familiesResponse, componentsResponse] = await Promise.all([
     supabase
       .from("categories")
-      .select("id, name")
+      .select("id, name, icon_key")
       .eq("is_active", true)
       .ilike("name", pattern)
       .order("name")
       .limit(NAVIGATION_SEARCH_LIMIT),
     supabase
       .from("category_families")
-      .select("category:categories!inner(id, name, is_active), family:families!inner(id, name, is_active)")
+      .select("category:categories!inner(id, name, icon_key, is_active), family:families!inner(id, name, icon_key, is_active)")
       .eq("is_active", true)
       .eq("category.is_active", true)
       .eq("family.is_active", true)
@@ -305,7 +292,7 @@ export async function searchCatalogNavigation(
       .limit(NAVIGATION_SEARCH_LIMIT),
     supabase
       .from("components")
-      .select("id, name, family:families!inner(id, name, is_active)")
+      .select("id, name, icon_key, family:families!inner(id, name, icon_key, is_active)")
       .eq("is_active", true)
       .eq("family.is_active", true)
       .ilike("name", pattern)
@@ -333,7 +320,7 @@ export async function searchCatalogNavigation(
   const componentPathsResponse = componentFamilyIds.length > 0
     ? await supabase
         .from("category_families")
-        .select("family_id, category:categories!inner(id, name, is_active)")
+        .select("family_id, category:categories!inner(id, name, icon_key, is_active)")
         .in("family_id", componentFamilyIds)
         .eq("is_active", true)
         .eq("category.is_active", true)

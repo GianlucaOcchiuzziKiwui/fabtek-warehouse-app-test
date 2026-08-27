@@ -85,28 +85,44 @@ test("uses correct Italian taxonomy labels in singular and plural", () => {
   assert.equal(catalogMappers.getCatalogNavigationKindLabel("component", 2), "Componenti");
 });
 
+test("accepts only supported catalog icon keys and falls back safely", () => {
+  assert.equal(catalogMappers.normalizeCatalogIconKey("gauge", "factory"), "gauge");
+  assert.equal(catalogMappers.normalizeCatalogIconKey("<svg onload=alert(1)>", "boxes"), "boxes");
+  assert.equal(catalogMappers.normalizeCatalogIconKey(null, "component"), "component");
+});
+
+test("maps database catalog options with their persisted icon key", () => {
+  assert.deepEqual(catalogMappers.mapCatalogOptions([
+    { family: { id: "family-1", name: "Valvole", icon_key: "wrench" } },
+    { family: { id: "family-2", name: "Altro", icon_key: "unknown-icon" } },
+  ], "boxes", "family"), [
+    { id: "family-1", name: "Valvole", iconKey: "wrench" },
+    { id: "family-2", name: "Altro", iconKey: "boxes" },
+  ]);
+});
+
 test("maps grouped taxonomy results with an unambiguous category path", () => {
   const matches = catalogMappers.mapCatalogNavigationMatches([
     {
       kind: "category",
-      category: { id: "cat-gas", name: "Gas" },
+      category: { id: "cat-gas", name: "Gas", icon_key: "cylinder" },
     },
     {
       kind: "family",
-      category: { id: "cat-gas", name: "Gas" },
-      family: { id: "fam-valves", name: "Valvole" },
+      category: { id: "cat-gas", name: "Gas", icon_key: "cylinder" },
+      family: { id: "fam-valves", name: "Valvole", icon_key: "wrench" },
     },
     {
       kind: "component",
-      category: { id: "cat-gas", name: "Gas" },
-      family: { id: "fam-valves", name: "Valvole" },
-      component: { id: "cmp-manual", name: "Valvole manuali" },
+      category: { id: "cat-gas", name: "Gas", icon_key: "cylinder" },
+      family: { id: "fam-valves", name: "Valvole", icon_key: "wrench" },
+      component: { id: "cmp-manual", name: "Valvole manuali", icon_key: "component" },
     },
     {
       kind: "component",
-      category: { id: "cat-gas", name: "Gas" },
-      family: { id: "fam-valves", name: "Valvole" },
-      component: { id: "cmp-manual", name: "Valvole manuali" },
+      category: { id: "cat-gas", name: "Gas", icon_key: "cylinder" },
+      family: { id: "fam-valves", name: "Valvole", icon_key: "wrench" },
+      component: { id: "cmp-manual", name: "Valvole manuali", icon_key: "component" },
     },
     { kind: "component", category: { id: "cat-gas", name: "Gas" } },
   ]);
@@ -114,21 +130,21 @@ test("maps grouped taxonomy results with an unambiguous category path", () => {
   assert.deepEqual(matches, [
     {
       kind: "category",
-      category: { id: "cat-gas", name: "Gas" },
+      category: { id: "cat-gas", name: "Gas", iconKey: "cylinder" },
       family: null,
       component: null,
     },
     {
       kind: "family",
-      category: { id: "cat-gas", name: "Gas" },
-      family: { id: "fam-valves", name: "Valvole" },
+      category: { id: "cat-gas", name: "Gas", iconKey: "cylinder" },
+      family: { id: "fam-valves", name: "Valvole", iconKey: "wrench" },
       component: null,
     },
     {
       kind: "component",
-      category: { id: "cat-gas", name: "Gas" },
-      family: { id: "fam-valves", name: "Valvole" },
-      component: { id: "cmp-manual", name: "Valvole manuali" },
+      category: { id: "cat-gas", name: "Gas", iconKey: "cylinder" },
+      family: { id: "fam-valves", name: "Valvole", iconKey: "wrench" },
+      component: { id: "cmp-manual", name: "Valvole manuali", iconKey: "component" },
     },
   ]);
 });

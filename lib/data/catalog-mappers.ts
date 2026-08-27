@@ -1,6 +1,30 @@
+export const CATALOG_ICON_KEYS = [
+  "boxes",
+  "cable",
+  "circle-dot",
+  "circle-gauge",
+  "component",
+  "cylinder",
+  "droplets",
+  "factory",
+  "flask-conical",
+  "gauge",
+  "git-branch",
+  "package-search",
+  "plug",
+  "snowflake",
+  "sparkles",
+  "waves",
+  "wind",
+  "wrench",
+] as const;
+
+export type CatalogIconKey = typeof CATALOG_ICON_KEYS[number];
+
 export type CatalogOption = {
   id: string;
   name: string;
+  iconKey: CatalogIconKey;
 };
 
 export type CatalogFilters = {
@@ -72,9 +96,9 @@ export function mapCatalogNavigationMatches(
       continue;
     }
 
-    const category = mapOption(value.category);
-    const family = kind === "category" ? null : mapOption(value.family);
-    const component = kind === "component" ? mapOption(value.component) : null;
+    const category = mapOption(value.category, "factory");
+    const family = kind === "category" ? null : mapOption(value.family, "boxes");
+    const component = kind === "component" ? mapOption(value.component, "component") : null;
     if (!category || (kind !== "category" && !family) || (kind === "component" && !component)) {
       continue;
     }
@@ -192,13 +216,47 @@ function nullableInteger(value: unknown): number | null {
   return typeof value === "number" && Number.isInteger(value) ? value : null;
 }
 
-function mapOption(value: unknown): CatalogOption | null {
+const CATALOG_ICON_KEY_SET = new Set<string>(CATALOG_ICON_KEYS);
+
+export function normalizeCatalogIconKey(
+  value: unknown,
+  fallback: CatalogIconKey,
+): CatalogIconKey {
+  const normalized = text(value);
+  return normalized && CATALOG_ICON_KEY_SET.has(normalized)
+    ? normalized as CatalogIconKey
+    : fallback;
+}
+
+function mapOption(
+  value: unknown,
+  fallbackIconKey: CatalogIconKey,
+): CatalogOption | null {
   const record = firstRecord(value);
   if (!record) return null;
 
   const id = text(record.id);
   const name = text(record.name);
-  return id && name ? { id, name } : null;
+  return id && name
+    ? { id, name, iconKey: normalizeCatalogIconKey(record.icon_key, fallbackIconKey) }
+    : null;
+}
+
+export function mapCatalogOptions(
+  rows: unknown,
+  fallbackIconKey: CatalogIconKey,
+  relation?: string,
+): CatalogOption[] {
+  if (!Array.isArray(rows)) return [];
+
+  const options = new Map<string, CatalogOption>();
+  for (const row of rows) {
+    if (!isRecord(row)) continue;
+    const option = mapOption(relation ? row[relation] : row, fallbackIconKey);
+    if (option) options.set(option.id, option);
+  }
+
+  return [...options.values()];
 }
 
 function mapStockRows(rows: readonly unknown[]) {
@@ -229,7 +287,7 @@ function mapCategories(value: unknown): CatalogOption[] {
   const categories = new Map<string, CatalogOption>();
   for (const relation of value) {
     const category = isRecord(relation)
-      ? mapOption(relation.category)
+      ? mapOption(relation.category, "factory")
       : null;
     if (category) categories.set(category.id, category);
   }
@@ -416,8 +474,8 @@ export function mapCatalogRows(
       material: text(value.material) ?? "",
       connection: text(value.connection) ?? "",
       technicalAttributes,
-      component: mapOption(componentRecord),
-      family: mapOption(componentRecord?.family),
+      component: mapOption(componentRecord, "component"),
+      family: mapOption(componentRecord?.family, "boxes"),
       unitOfMeasure: unitCode && unitName
         ? { code: unitCode, name: unitName }
         : null,

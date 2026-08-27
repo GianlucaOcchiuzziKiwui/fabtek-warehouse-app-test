@@ -290,7 +290,7 @@ Il modello completo è definito in `products.md`. Le migration saranno organizza
 
 1. estensioni, enum e funzioni comuni;
 2. profili, trigger Auth e helper RLS;
-3. catalogo: categorie, alias esterni, famiglie, componenti, varianti e associazioni molti-a-molti;
+3. catalogo: categorie, alias esterni, famiglie e componenti con `icon_key` validata, varianti e associazioni molti-a-molti;
 4. unità di misura, riferimenti fornitore e asset tecnici;
 5. staging, batch e issue di import catalogo;
 6. inventario e movimenti, con `item_variants.track_inventory` come sorgente autorevole della modalità per le nuove richieste;
