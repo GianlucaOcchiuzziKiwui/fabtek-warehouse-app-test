@@ -259,6 +259,45 @@ export function mapCatalogOptions(
   return [...options.values()];
 }
 
+export function mapDerivedCatalogOptions(
+  rows: unknown,
+  kind: "family" | "component",
+): CatalogOption[] {
+  if (!Array.isArray(rows)) return [];
+
+  const fallbackIcon: CatalogIconKey = kind === "family" ? "boxes" : "component";
+  const entries = new Map<string, { option: CatalogOption; sortOrder: number }>();
+
+  for (const row of rows) {
+    if (!isRecord(row)) continue;
+    const variant = firstRecord(row.item_variant);
+    const component = firstRecord(variant?.component);
+    const family = firstRecord(component?.family);
+    if (
+      variant?.is_active !== true
+      || component?.is_active !== true
+      || family?.is_active !== true
+    ) {
+      continue;
+    }
+
+    const record = kind === "family" ? family : component;
+    const option = mapOption(record, fallbackIcon);
+    if (!option) continue;
+    entries.set(option.id, {
+      option,
+      sortOrder: nullableInteger(record.sort_order) ?? 0,
+    });
+  }
+
+  return [...entries.values()]
+    .sort((left, right) => (
+      left.sortOrder - right.sortOrder
+      || left.option.name.localeCompare(right.option.name, "it", { sensitivity: "base" })
+    ))
+    .map(({ option }) => option);
+}
+
 function mapStockRows(rows: readonly unknown[]) {
   const stocks = new Map<string, StockView>();
 

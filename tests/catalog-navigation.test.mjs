@@ -101,6 +101,142 @@ test("maps database catalog options with their persisted icon key", () => {
   ]);
 });
 
+test("derives unique ordered families and components from active item rows", () => {
+  const rows = [
+    {
+      item_variant: {
+        is_active: true,
+        component: {
+          id: "component-b",
+          name: "Tubi",
+          icon_key: "cable",
+          sort_order: 20,
+          is_active: true,
+          family: {
+            id: "family-b",
+            name: "Tubazioni",
+            icon_key: "boxes",
+            sort_order: 20,
+            is_active: true,
+          },
+        },
+      },
+    },
+    {
+      item_variant: {
+        is_active: true,
+        component: {
+          id: "component-a",
+          name: "Valvole manuali",
+          icon_key: "wrench",
+          sort_order: 10,
+          is_active: true,
+          family: {
+            id: "family-a",
+            name: "Valvole",
+            icon_key: "wrench",
+            sort_order: 10,
+            is_active: true,
+          },
+        },
+      },
+    },
+    {
+      item_variant: {
+        is_active: true,
+        component: {
+          id: "component-a",
+          name: "Valvole manuali",
+          icon_key: "wrench",
+          sort_order: 10,
+          is_active: true,
+          family: {
+            id: "family-a",
+            name: "Valvole",
+            icon_key: "wrench",
+            sort_order: 10,
+            is_active: true,
+          },
+        },
+      },
+    },
+  ];
+
+  assert.deepEqual(catalogMappers.mapDerivedCatalogOptions(rows, "family"), [
+    { id: "family-a", name: "Valvole", iconKey: "wrench" },
+    { id: "family-b", name: "Tubazioni", iconKey: "boxes" },
+  ]);
+  assert.deepEqual(catalogMappers.mapDerivedCatalogOptions(rows, "component"), [
+    { id: "component-a", name: "Valvole manuali", iconKey: "wrench" },
+    { id: "component-b", name: "Tubi", iconKey: "cable" },
+  ]);
+});
+
+test("does not derive taxonomy options from inactive or malformed item paths", () => {
+  const activePath = {
+    item_variant: {
+      is_active: true,
+      component: {
+        id: "component-active",
+        name: "Componente attivo",
+        sort_order: 0,
+        is_active: true,
+        family: {
+          id: "family-active",
+          name: "Famiglia attiva",
+          sort_order: 0,
+          is_active: true,
+        },
+      },
+    },
+  };
+  const inactiveItem = structuredClone(activePath);
+  inactiveItem.item_variant.is_active = false;
+  const inactiveComponent = structuredClone(activePath);
+  inactiveComponent.item_variant.component.is_active = false;
+  const inactiveFamily = structuredClone(activePath);
+  inactiveFamily.item_variant.component.family.is_active = false;
+
+  assert.deepEqual(catalogMappers.mapDerivedCatalogOptions([
+    null,
+    {},
+    inactiveItem,
+    inactiveComponent,
+    inactiveFamily,
+    activePath,
+  ], "family"), [
+    { id: "family-active", name: "Famiglia attiva", iconKey: "boxes" },
+  ]);
+});
+
+test("keeps separate category paths while removing duplicate item paths", () => {
+  const component = {
+    id: "cmp-manual",
+    name: "Valvole manuali",
+    icon_key: "component",
+  };
+  const family = {
+    id: "fam-valves",
+    name: "Valvole",
+    icon_key: "wrench",
+  };
+  const gasPath = {
+    kind: "component",
+    category: { id: "cat-gas", name: "Gas" },
+    family,
+    component,
+  };
+
+  assert.deepEqual(catalogMappers.mapCatalogNavigationMatches([
+    gasPath,
+    gasPath,
+    {
+      ...gasPath,
+      category: { id: "cat-water", name: "Acqua" },
+    },
+  ]).map((match) => match.category.id), ["cat-gas", "cat-water"]);
+});
+
 test("maps grouped taxonomy results with an unambiguous category path", () => {
   const matches = catalogMappers.mapCatalogNavigationMatches([
     {
