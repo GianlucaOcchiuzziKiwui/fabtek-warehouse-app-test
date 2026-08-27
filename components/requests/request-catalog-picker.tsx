@@ -1,6 +1,6 @@
 import { AvailabilityBadge } from "@/components/catalog/availability-badge";
 import { CatalogNavigation } from "@/components/catalog/catalog-navigation";
-import { AddToRequestButton } from "@/components/requests/add-to-request-button";
+import { RequestItemRowControls } from "@/components/requests/add-to-request-button";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -25,51 +25,50 @@ function requestFilterParams(filters: CatalogFilters, page?: number) {
   return params;
 }
 
-function VariantDetails({
-  variant,
+function RequestItemTable({
+  variants,
   selectedCategoryId,
 }: {
-  variant: CatalogVariant;
+  variants: CatalogVariant[];
   selectedCategoryId?: string;
 }) {
   return (
-    <article className="grid gap-5 rounded-xl border border-border bg-card p-4 shadow-sm lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.8fr)] lg:p-5">
-      <div className="min-w-0 space-y-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-primary">{variant.fabtekCode}</p>
-          <h3 className="mt-1 font-heading text-lg font-semibold">{variant.description}</h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {[variant.family?.name, variant.component?.name].filter(Boolean).join(" · ") || "Articolo catalogo"}
-          </p>
-        </div>
-        <dl className="grid gap-x-5 gap-y-2 text-sm sm:grid-cols-3">
-          <div>
-            <dt className="text-xs text-muted-foreground">Misura</dt>
-            <dd className="font-medium">{variant.diameter || "—"}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted-foreground">Materiale</dt>
-            <dd className="font-medium">{variant.material || "—"}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted-foreground">Connessione</dt>
-            <dd className="font-medium">{variant.connection || "—"}</dd>
-          </div>
-        </dl>
-      </div>
-      <div className="space-y-4 lg:border-l lg:border-border lg:pl-5">
-        <AvailabilityBadge stock={variant.stock} />
-        <AddToRequestButton
-          itemVariantId={variant.id}
-          categories={variant.categories}
-          selectedCategoryId={selectedCategoryId}
-          stock={{
-            trackInventory: variant.stock.trackInventory,
-            availableQuantity: variant.stock.availableQuantity,
-          }}
-        />
-      </div>
-    </article>
+    <div className="overflow-x-auto rounded-xl border border-border bg-card">
+      <table data-request-item-table className="w-full min-w-[720px] border-collapse text-left text-sm">
+        <thead className="bg-brand-navy text-white">
+          <tr>
+            <th scope="col" className="px-3 py-2.5 text-xs font-semibold uppercase tracking-wide">Part #</th>
+            <th scope="col" className="px-3 py-2.5 text-xs font-semibold uppercase tracking-wide">Misura</th>
+            <th scope="col" className="px-3 py-2.5 text-xs font-semibold uppercase tracking-wide">Materiale</th>
+            <th scope="col" className="px-3 py-2.5 text-xs font-semibold uppercase tracking-wide">Connessione</th>
+            <th scope="col" className="px-3 py-2.5 text-xs font-semibold uppercase tracking-wide">Disponibilità</th>
+            <th scope="col" className="px-3 py-2.5 text-xs font-semibold uppercase tracking-wide">Quantità</th>
+            <th scope="col" className="px-3 py-2.5"><span className="sr-only">Azioni</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {variants.map((variant) => (
+            <tr key={`${variant.id}:${selectedCategoryId ?? "all"}`} className="border-b border-border last:border-b-0 even:bg-muted/45">
+              <td className="px-3 py-3 align-top font-mono font-semibold" title={variant.description}>{variant.fabtekCode}</td>
+              <td className="px-3 py-3 align-top">{variant.diameter || "—"}</td>
+              <td className="px-3 py-3 align-top">{variant.material || "—"}</td>
+              <td className="px-3 py-3 align-top">{variant.connection || "—"}</td>
+              <td className="px-3 py-3 align-top"><AvailabilityBadge stock={variant.stock} /></td>
+              <RequestItemRowControls
+                itemVariantId={variant.id}
+                categories={variant.categories}
+                selectedCategoryId={selectedCategoryId}
+                stock={{
+                  trackInventory: variant.stock.trackInventory,
+                  availableQuantity: variant.stock.availableQuantity,
+                }}
+                datasheetUrl={variant.datasheet?.url ?? null}
+              />
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
@@ -151,9 +150,8 @@ export function RequestCatalogPicker({
             <h3 className="font-heading text-lg font-semibold">{selectedVariant.fabtekCode}</h3>
           </CardHeader>
           <CardContent>
-            <VariantDetails
-              key={`${selectedVariant.id}:${selectedCategoryId ?? "selected"}`}
-              variant={selectedVariant}
+            <RequestItemTable
+              variants={[selectedVariant]}
               selectedCategoryId={selectedCategoryId}
             />
           </CardContent>
@@ -180,13 +178,9 @@ export function RequestCatalogPicker({
             <p className="text-sm text-muted-foreground">
               {result.total} {result.total === 1 ? "item trovato" : "item trovati"}
             </p>
-            {resultItems.map((variant) => (
-              <VariantDetails
-                key={`${variant.id}:${filters.categoryId ?? "all"}`}
-                variant={variant}
-                selectedCategoryId={filters.categoryId}
-              />
-            ))}
+            {resultItems.length > 0 ? (
+              <RequestItemTable variants={resultItems} selectedCategoryId={filters.categoryId} />
+            ) : null}
             <RequestPagination result={result} filters={filters} />
           </div>
         )}

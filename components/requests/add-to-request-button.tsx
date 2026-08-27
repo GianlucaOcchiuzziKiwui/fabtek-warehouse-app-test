@@ -14,11 +14,12 @@ type RequestCategory = {
   name: string;
 };
 
-export function AddToRequestButton({
+export function RequestItemRowControls({
   itemVariantId,
   categories,
   selectedCategoryId,
   stock,
+  datasheetUrl,
 }: {
   itemVariantId: string;
   categories: RequestCategory[];
@@ -27,6 +28,7 @@ export function AddToRequestButton({
     trackInventory: boolean;
     availableQuantity: number | null;
   };
+  datasheetUrl: string | null;
 }) {
   const { draft, addLine } = useRequestDraft();
   const fixedCategory = categories.find((category) => category.id === selectedCategoryId)
@@ -50,14 +52,12 @@ export function AddToRequestButton({
   }
 
   return (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-end gap-2">
+    <>
+      <td className="px-3 py-3 align-top">
         {fixedCategory ? (
-          <p className="min-w-36 flex-1 text-xs text-muted-foreground">
-            Categoria <span className="block font-medium text-foreground">{fixedCategory.name}</span>
-          </p>
+          <span className="sr-only">Categoria: {fixedCategory.name}</span>
         ) : (
-          <div className="min-w-40 flex-1">
+          <div className="w-36">
             <label htmlFor={`request-category-${itemVariantId}`} className="mb-1 block text-xs font-medium">
               Categoria
             </label>
@@ -78,44 +78,51 @@ export function AddToRequestButton({
             </select>
           </div>
         )}
-
-        <div className="w-28">
-          <label htmlFor={`request-quantity-${itemVariantId}`} className="mb-1 block text-xs font-medium">
-            Quantità
-          </label>
-          <input
-            id={`request-quantity-${itemVariantId}`}
-            type="number"
-            value={quantityValue}
-            onChange={(event) => {
-              setQuantityValue(event.target.value);
-              setWasAdded(false);
-            }}
-            min={1}
-            max={stock.trackInventory && stock.availableQuantity !== null
-              ? stock.availableQuantity
-              : 999_999}
-            step={1}
-            inputMode="numeric"
-            aria-invalid={showQuantityError}
-            aria-describedby={showQuantityError ? quantityErrorId : undefined}
-            className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25"
-          />
+        <label htmlFor={`request-quantity-${itemVariantId}`} className="sr-only">Quantità</label>
+        <input
+          id={`request-quantity-${itemVariantId}`}
+          type="number"
+          value={quantityValue}
+          onChange={(event) => {
+            setQuantityValue(event.target.value);
+            setWasAdded(false);
+          }}
+          min={1}
+          max={stock.trackInventory && stock.availableQuantity !== null
+            ? stock.availableQuantity
+            : 999_999}
+          step={1}
+          inputMode="numeric"
+          aria-invalid={showQuantityError}
+          aria-describedby={showQuantityError ? quantityErrorId : undefined}
+          className="h-10 w-16 rounded-md border border-input bg-background px-2 text-center font-mono text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25"
+        />
+      </td>
+      <td className="px-3 py-3 align-top">
+        <div className="flex items-center gap-2">
+          <Button type="button" variant="accent" onClick={addToDraft} disabled={!canAdd}>
+            {wasAdded ? <Check aria-hidden="true" /> : <Plus aria-hidden="true" />}
+            {wasAdded ? "Aggiunto" : "Aggiungi"}
+          </Button>
+          {datasheetUrl ? (
+            <Button asChild variant="outline">
+              <a href={datasheetUrl} target="_blank" rel="noreferrer">
+                Data Sheet
+              </a>
+            </Button>
+          ) : (
+            <Button type="button" variant="outline" disabled>Data Sheet</Button>
+          )}
         </div>
 
-        <Button type="button" variant="accent" onClick={addToDraft} disabled={!canAdd}>
-          {wasAdded ? <Check aria-hidden="true" /> : <Plus aria-hidden="true" />}
-          {wasAdded ? "Aggiunto" : "Aggiungi"}
-        </Button>
-      </div>
-
-      {!headerIsComplete ? (
-        <p className="text-xs text-amber-700">Completa l’intestazione prima di aggiungere materiali.</p>
-      ) : showQuantityError ? (
-        <p id={quantityErrorId} className="text-xs text-destructive">
-          {validation.error.message}
-        </p>
-      ) : null}
-    </div>
+        {!headerIsComplete ? (
+          <p className="mt-2 max-w-52 whitespace-normal text-xs text-amber-700">Completa l’intestazione prima di aggiungere materiali.</p>
+        ) : showQuantityError ? (
+          <p id={quantityErrorId} className="mt-2 max-w-52 whitespace-normal text-xs text-destructive">
+            {validation.error.message}
+          </p>
+        ) : null}
+      </td>
+    </>
   );
 }
