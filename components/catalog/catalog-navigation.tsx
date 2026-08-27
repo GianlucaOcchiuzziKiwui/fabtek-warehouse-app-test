@@ -297,12 +297,14 @@ export function CatalogNavigation({
   filters,
   options,
   searchMatches,
+  compact = false,
   children,
 }: {
   basePath: string;
   filters: CatalogFilters;
   options: CatalogFilterOptions;
   searchMatches: CatalogNavigationMatch[];
+  compact?: boolean;
   children?: ReactNode;
 }) {
   const step = resolveCatalogNavigationStep(filters);
@@ -335,42 +337,58 @@ export function CatalogNavigation({
 
   return (
     <div className="space-y-6">
-      <section className="rounded-xl border border-border bg-card p-5 shadow-sm sm:p-6" aria-labelledby={`catalog-search-heading-${basePath.replaceAll("/", "-")}`}>
-        <div className="mb-4 flex items-start gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-brand-navy text-white">
-            <Search aria-hidden="true" className="size-5" />
-          </span>
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-copper">Ricerca rapida</p>
-            <h2 id={`catalog-search-heading-${basePath.replaceAll("/", "-")}`} className="mt-0.5 font-heading text-xl font-semibold">
-              Trova categoria, famiglia o componente
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground">Scrivi un nome per aprire direttamente il percorso corretto nel catalogo.</p>
+      <section
+        className={compact
+          ? "rounded-xl border border-border bg-card p-3 shadow-sm sm:p-4"
+          : "rounded-xl border border-border bg-card p-5 shadow-sm sm:p-6"}
+        aria-labelledby={`catalog-search-heading-${basePath.replaceAll("/", "-")}`}
+      >
+        <div className={compact ? "flex flex-col gap-3 lg:flex-row lg:items-center" : undefined}>
+          <div className={compact ? "shrink-0 lg:w-64" : "mb-4 flex items-start gap-3"}>
+            {!compact ? (
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-brand-navy text-white">
+                <Search aria-hidden="true" className="size-5" />
+              </span>
+            ) : null}
+            <div>
+              {!compact ? (
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-copper">Ricerca rapida</p>
+              ) : null}
+              <h2
+                id={`catalog-search-heading-${basePath.replaceAll("/", "-")}`}
+                className={compact ? "font-heading text-lg font-semibold" : "mt-0.5 font-heading text-xl font-semibold"}
+              >
+                Trova categoria, famiglia o componente
+              </h2>
+              {!compact ? (
+                <p className="mt-1 text-sm text-muted-foreground">Scrivi un nome per aprire direttamente il percorso corretto nel catalogo.</p>
+              ) : null}
+            </div>
           </div>
-        </div>
-        <Form action={basePath} className="flex flex-col gap-2 sm:flex-row">
-          <div className="relative min-w-0 flex-1">
-            <Search aria-hidden="true" className="pointer-events-none absolute left-3.5 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              id={`catalog-query-${basePath.replaceAll("/", "-")}`}
-              aria-label="Cerca categoria, famiglia o componente"
-              className="h-12 bg-background pl-11 text-base md:text-base"
-              name="q"
-              defaultValue={filters.query}
-              maxLength={120}
-              placeholder="Es. Gas, Valvole, Raccordi..."
-            />
-          </div>
-          <Button type="submit" className="h-12 shrink-0 px-6">
-            Cerca
-            <ChevronRight aria-hidden="true" />
-          </Button>
-          {step === "search" ? (
-            <Button asChild variant="outline" className="h-12 shrink-0">
-              <Link href={basePath}><X aria-hidden="true" />Azzera</Link>
+          <Form action={basePath} className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row">
+            <div className="relative min-w-0 flex-1">
+              <Search aria-hidden="true" className="pointer-events-none absolute left-3.5 top-1/2 size-5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id={`catalog-query-${basePath.replaceAll("/", "-")}`}
+                aria-label="Cerca categoria, famiglia o componente"
+                className={compact ? "h-10 bg-background pl-11" : "h-12 bg-background pl-11 text-base md:text-base"}
+                name="q"
+                defaultValue={filters.query}
+                maxLength={120}
+                placeholder="Es. Gas, Valvole, Raccordi..."
+              />
+            </div>
+            <Button type="submit" className={compact ? "h-10 shrink-0 px-5" : "h-12 shrink-0 px-6"}>
+              Cerca
+              <ChevronRight aria-hidden="true" />
             </Button>
-          ) : null}
-        </Form>
+            {step === "search" ? (
+              <Button asChild variant="outline" className={compact ? "h-10 shrink-0" : "h-12 shrink-0"}>
+                <Link href={basePath}><X aria-hidden="true" />Azzera</Link>
+              </Button>
+            ) : null}
+          </Form>
+        </div>
       </section>
 
       {step === "search" ? (

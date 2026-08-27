@@ -131,17 +131,7 @@ export function RequestCatalogPicker({
     : result.items;
 
   return (
-    <section className="space-y-6" aria-labelledby="request-picker-title">
-      <div>
-        <p className="text-sm font-semibold text-primary">2. Materiali</p>
-        <h2 id="request-picker-title" className="mt-1 font-heading text-2xl font-semibold tracking-tight">
-          Selezione guidata
-        </h2>
-        <p className="mt-2 text-sm text-muted-foreground">
-          Segui Categoria → Famiglia → Componente, poi indica la quantità della variante.
-        </p>
-      </div>
-
+    <section className="space-y-4" aria-label="Selezione materiali">
       {selectedVariant ? (
         <Card className="border-primary/35 bg-primary/[0.035]">
           <CardHeader>
@@ -169,6 +159,7 @@ export function RequestCatalogPicker({
         filters={filters}
         options={options}
         searchMatches={searchMatches}
+        compact
       >
         {result.items.length === 0 ? (
           <EmptyState

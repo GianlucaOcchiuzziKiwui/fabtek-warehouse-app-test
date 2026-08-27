@@ -42,11 +42,12 @@ test("drops partial or malformed catalog selections", () => {
 });
 
 test("keeps the request header and material catalog on separate pages", async () => {
-  const [appLayout, headerPage, materialsPage, requestCartHeader] = await Promise.all([
+  const [appLayout, headerPage, materialsPage, requestCartHeader, requestPicker] = await Promise.all([
     readFile("app/(app)/layout.tsx", "utf8"),
     readFile("app/(app)/richieste/nuova/page.tsx", "utf8"),
     readFile("app/(app)/richieste/nuova/materiali/page.tsx", "utf8").catch(() => ""),
     readFile("components/requests/request-cart-header.tsx", "utf8").catch(() => ""),
+    readFile("components/requests/request-catalog-picker.tsx", "utf8"),
   ]);
 
   assert.doesNotMatch(headerPage, /RequestCatalogPicker/u);
@@ -56,4 +57,6 @@ test("keeps the request header and material catalog on separate pages", async ()
   assert.match(appLayout, /showRequestCart/u);
   assert.match(requestCartHeader, /\/richieste\/nuova/u);
   assert.match(requestCartHeader, /usePathname/u);
+  assert.match(requestPicker, /<CatalogNavigation[\s\S]*?compact/u);
+  assert.doesNotMatch(requestPicker, /Selezione guidata/u);
 });
