@@ -8,7 +8,9 @@ const REQUEST_UI_FILES = [
   "app/(app)/richieste/[requestId]/loading.tsx",
   "app/(app)/richieste/[requestId]/not-found.tsx",
   "app/(app)/richieste/[requestId]/page.tsx",
+  "app/(app)/richieste/nuova/materiali/page.tsx",
   "components/requests/request-detail.tsx",
+  "components/requests/request-header-form.tsx",
   "components/requests/submit-request-button.tsx",
 ];
 

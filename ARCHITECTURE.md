@@ -218,7 +218,8 @@ Regole di dipendenza:
 | Recupero password | `/auth/forgot-password`, `/auth/update-password` | Pubblico/flow Auth |
 | Home | `/` | User e Admin autenticati |
 | Catalogo informativo | `/catalogo` | User e Admin |
-| Nuova richiesta | `/richieste/nuova` | User e Admin |
+| Nuova richiesta - dati base | `/richieste/nuova` | User e Admin |
+| Nuova richiesta - selezione materiali | `/richieste/nuova/materiali` | User e Admin |
 | Richieste personali | `/richieste` | User e Admin, filtrate via RLS |
 | Dettaglio richiesta | `/richieste/[requestId]` | Proprietario o Admin |
 | Dashboard Admin | `/admin` | Solo Admin |

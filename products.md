@@ -105,6 +105,8 @@ Il passaggio successivo resta disabilitato finché tutti i campi obbligatori non
 
 ### 6.2 Selezione guidata
 
+La creazione è divisa in due route. In `/richieste/nuova` l'utente compila e salva nella propria bozza locale i dati base; questo passaggio non crea ancora una richiesta nel database. Soltanto con l'intestazione completa può accedere a `/richieste/nuova/materiali`, dove ricerca o naviga il catalogo e gestisce gli articoli. Se il flusso parte da **Richiedi questo articolo**, variante e categoria selezionate attraversano il primo passaggio e vengono riproposte nella schermata materiali.
+
 Il catalogo presenta questo imbuto all'utente:
 
 `Categoria → Famiglia → Componente → Variante/misura`

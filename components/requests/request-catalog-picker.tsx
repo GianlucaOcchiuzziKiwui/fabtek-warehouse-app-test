@@ -11,6 +11,7 @@ import type {
   CatalogSearchResult,
   CatalogVariant,
 } from "@/lib/data/catalog";
+import { REQUEST_MATERIALS_PATH } from "@/lib/domain/requests/navigation";
 import { ArrowLeft, ArrowRight, BadgeCheck } from "lucide-react";
 import Link from "next/link";
 
@@ -88,7 +89,7 @@ function RequestPagination({
         <Button variant="outline" disabled><ArrowLeft aria-hidden="true" />Precedente</Button>
       ) : (
         <Button asChild variant="outline">
-          <Link href={`/richieste/nuova?${requestFilterParams(filters, result.page - 1)}`}>
+          <Link href={`${REQUEST_MATERIALS_PATH}?${requestFilterParams(filters, result.page - 1)}`}>
             <ArrowLeft aria-hidden="true" />Precedente
           </Link>
         </Button>
@@ -98,7 +99,7 @@ function RequestPagination({
         <Button variant="outline" disabled>Successiva<ArrowRight aria-hidden="true" /></Button>
       ) : (
         <Button asChild variant="outline">
-          <Link href={`/richieste/nuova?${requestFilterParams(filters, result.page + 1)}`}>
+          <Link href={`${REQUEST_MATERIALS_PATH}?${requestFilterParams(filters, result.page + 1)}`}>
             Successiva<ArrowRight aria-hidden="true" />
           </Link>
         </Button>
@@ -164,7 +165,7 @@ export function RequestCatalogPicker({
       ) : null}
 
       <CatalogNavigation
-        basePath="/richieste/nuova"
+        basePath={REQUEST_MATERIALS_PATH}
         filters={filters}
         options={options}
         searchMatches={searchMatches}

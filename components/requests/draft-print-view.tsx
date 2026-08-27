@@ -240,7 +240,7 @@ export function DraftPrintView({
         <EmptyState
           title="La bozza è vuota"
           description="Aggiungi almeno un articolo prima di aprire il riepilogo."
-          action={<Button asChild><Link href="/richieste/nuova">Scegli materiali</Link></Button>}
+          action={<Button asChild><Link href="/richieste/nuova/materiali">Scegli materiali</Link></Button>}
         />
       </div>
     );
@@ -408,7 +408,7 @@ export function DraftPrintView({
               <ArrowLeft aria-hidden="true" />Torna alla selezione
             </Button>
           ) : (
-            <Button asChild variant="outline"><Link href="/richieste/nuova"><ArrowLeft aria-hidden="true" />Torna alla selezione</Link></Button>
+            <Button asChild variant="outline"><Link href="/richieste/nuova/materiali"><ArrowLeft aria-hidden="true" />Torna alla selezione</Link></Button>
           )}
           <div className="flex flex-col gap-3 sm:items-end">
             <SubmitRequestButton disabled={!canPrint} />
