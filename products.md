@@ -111,7 +111,9 @@ Il catalogo presenta questo imbuto all'utente:
 
 `Categoria → Famiglia → Componente → Variante/misura`
 
-L'imbuto è una modalità di navigazione, non una catena di appartenenza uno-a-molti: una stessa variante può essere compatibile con più categorie/utilità di impianto. La categoria selezionata deve quindi filtrare le varianti tramite un'associazione molti-a-molti, mentre famiglia e componente descrivono la tassonomia tecnica del prodotto.
+L'item (`item_variants`) è l'unità base del catalogo. Ogni item appartiene a un componente, ogni componente appartiene a una famiglia e ogni item può essere associato a N categorie tramite `item_variant_categories`. Non esiste una relazione diretta tra categoria e famiglia o tra categoria e componente: entrambe sono proiezioni dedotte dagli item attivi. L'imbuto è quindi una modalità di navigazione e non una gerarchia persistita completa.
+
+Il primo step mostra sempre tutte le categorie attive. Dopo la scelta di una categoria, famiglie e componenti vengono ricavati attraversando `item_variant_categories → item_variants → components → families`; ogni livello mostra soltanto gruppi che contengono almeno un item attivo nel percorso selezionato.
 
 La ricerca è separata dall'imbuto e restituisce soltanto corrispondenze di categoria, famiglia o componente. Ogni corrispondenza espone il percorso tassonomico completo e, una volta selezionata, riporta l'utente nel relativo punto dell'imbuto. Senza ricerca la pagina mostra inizialmente solo le categorie; gli item vengono caricati esclusivamente dopo la scelta del componente.
 
@@ -147,7 +149,7 @@ Famiglie canoniche iniziali, ottenute unendo i requisiti funzionali con i valori
 - Accessori
 - Altro
 
-Categorie e famiglie iniziali sono seed data, non enum rigidi nel codice: l'Admin deve poterle gestire. L'associazione tra categoria e famiglia deve essere rappresentata esplicitamente nel database. I codici presenti nelle fonti di importazione sono alias esterni e non devono essere confusi con il testo libero `Utilities` della richiesta.
+Categorie e famiglie iniziali sono seed data, non enum rigidi nel codice: l'Admin deve poterle gestire. I percorsi tra categorie e famiglie sono dedotti dalle associazioni degli item e non vengono salvati separatamente. I codici presenti nelle fonti di importazione sono alias esterni e non devono essere confusi con il testo libero `Utilities` della richiesta.
 
 ### 6.3 Dettaglio variante
 
@@ -473,7 +475,7 @@ La coppia (`source_system`, `external_code`) è univoca case-insensitive. La ris
 - `sort_order integer`
 - `is_active boolean`
 
-La relazione molti-a-molti tra categorie e famiglie è rappresentata da `CategoryFamily`, con chiave composta (`category_id`, `family_id`).
+La famiglia raggruppa gli item transitivamente attraverso i propri componenti. Le categorie raggiungibili da una famiglia vengono dedotte dagli item associati e non costituiscono una relazione autonoma.
 
 ### Component
 
@@ -508,7 +510,7 @@ Il componente appartiene a una famiglia ma non a una sola categoria. La categori
 - `category_id uuid`
 - `source_system text null`
 
-La coppia (`item_variant_id`, `category_id`) è univoca. Un vincolo applicativo/database verifica che la famiglia del componente sia abilitata nella corrispondente `CategoryFamily`.
+La coppia (`item_variant_id`, `category_id`) è univoca ed è l'unica associazione autorevole tra tassonomia tecnica e categoria. L'invio di una richiesta verifica direttamente che la categoria selezionata sia associata all'item.
 
 ### UnitOfMeasure
 

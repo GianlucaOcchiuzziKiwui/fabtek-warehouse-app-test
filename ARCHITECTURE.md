@@ -291,7 +291,7 @@ Il modello completo è definito in `products.md`. Le migration saranno organizza
 
 1. estensioni, enum e funzioni comuni;
 2. profili, trigger Auth e helper RLS;
-3. catalogo: categorie, alias esterni, famiglie e componenti con `icon_key` validata, varianti e associazioni molti-a-molti;
+3. catalogo: categorie, alias esterni, famiglie e componenti con `icon_key` validata, varianti e associazioni molti-a-molti tra varianti e categorie;
 4. unità di misura, riferimenti fornitore e asset tecnici;
 5. staging, batch e issue di import catalogo;
 6. inventario e movimenti, con `item_variants.track_inventory` come sorgente autorevole della modalità per le nuove richieste;
@@ -311,6 +311,10 @@ Convenzioni:
 - chiavi univoche case-insensitive per codici e Part #;
 - FK con comportamento di cancellazione esplicito;
 - nessun totale derivabile aggiornabile liberamente dal client.
+
+`item_variants` è l'unità base del catalogo. La tassonomia persistita contiene soltanto `item_variants.component_id`, `components.family_id` e l'associazione molti-a-molti `item_variant_categories`. Non esistono relazioni dirette categoria-famiglia o categoria-componente.
+
+La navigazione elenca prima tutte le categorie attive. Dopo la selezione, il DAL deduce famiglie e componenti tramite `item_variant_categories → item_variants → components → families`, considerando soltanto entità attive e rimuovendo i duplicati. Catalogo informativo e selezione materiali riusano le stesse query server-side e la stessa canonicalizzazione del percorso.
 
 ## 9. Flussi transazionali
 
