@@ -26,3 +26,11 @@ test("step 4 item rows keep both mock actions", async () => {
   assert.match(addButton, /Data Sheet/u);
   assert.match(addButton, /"Aggiungi"/u);
 });
+
+test("table cells stay outside the interactive client boundary", async () => {
+  const picker = await readFile("components/requests/request-catalog-picker.tsx", "utf8");
+  const controls = await readFile("components/requests/add-to-request-button.tsx", "utf8");
+
+  assert.match(picker, /<td[^>]*colSpan=\{2\}[^>]*>[\s\S]*?<RequestItemRowControls/u);
+  assert.doesNotMatch(controls, /<td\b/u);
+});

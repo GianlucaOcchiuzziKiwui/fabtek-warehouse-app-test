@@ -52,8 +52,8 @@ export function RequestItemRowControls({
   }
 
   return (
-    <>
-      <td className="px-3 py-3 align-top">
+    <div className={`grid items-start gap-x-3 ${fixedCategory ? "grid-cols-[4rem_auto]" : "grid-cols-[9rem_auto]"}`}>
+      <div>
         {fixedCategory ? (
           <span className="sr-only">Categoria: {fixedCategory.name}</span>
         ) : (
@@ -97,8 +97,8 @@ export function RequestItemRowControls({
           aria-describedby={showQuantityError ? quantityErrorId : undefined}
           className="h-10 w-16 rounded-md border border-input bg-background px-2 text-center font-mono text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25"
         />
-      </td>
-      <td className="px-3 py-3 align-top">
+      </div>
+      <div>
         <div className="flex items-center gap-2">
           <Button type="button" variant="accent" onClick={addToDraft} disabled={!canAdd}>
             {wasAdded ? <Check aria-hidden="true" /> : <Plus aria-hidden="true" />}
@@ -116,13 +116,13 @@ export function RequestItemRowControls({
         </div>
 
         {!headerIsComplete ? (
-          <p className="mt-2 max-w-52 whitespace-normal text-xs text-amber-700">Completa l’intestazione prima di aggiungere materiali.</p>
+          <p className="mt-2 max-w-52 text-xs text-amber-700">Completa l’intestazione prima di aggiungere materiali.</p>
         ) : showQuantityError ? (
-          <p id={quantityErrorId} className="mt-2 max-w-52 whitespace-normal text-xs text-destructive">
+          <p id={quantityErrorId} className="mt-2 max-w-52 text-xs text-destructive">
             {validation.error.message}
           </p>
         ) : null}
-      </td>
-    </>
+      </div>
+    </div>
   );
 }

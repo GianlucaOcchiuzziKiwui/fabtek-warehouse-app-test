@@ -54,16 +54,18 @@ function RequestItemTable({
               <td className="px-3 py-3 align-top">{variant.material || "—"}</td>
               <td className="px-3 py-3 align-top">{variant.connection || "—"}</td>
               <td className="px-3 py-3 align-top"><AvailabilityBadge stock={variant.stock} /></td>
-              <RequestItemRowControls
-                itemVariantId={variant.id}
-                categories={variant.categories}
-                selectedCategoryId={selectedCategoryId}
-                stock={{
-                  trackInventory: variant.stock.trackInventory,
-                  availableQuantity: variant.stock.availableQuantity,
-                }}
-                datasheetUrl={variant.datasheet?.url ?? null}
-              />
+              <td colSpan={2} className="px-3 py-3 align-top">
+                <RequestItemRowControls
+                  itemVariantId={variant.id}
+                  categories={variant.categories}
+                  selectedCategoryId={selectedCategoryId}
+                  stock={{
+                    trackInventory: variant.stock.trackInventory,
+                    availableQuantity: variant.stock.availableQuantity,
+                  }}
+                  datasheetUrl={variant.datasheet?.url ?? null}
+                />
+              </td>
             </tr>
           ))}
         </tbody>
