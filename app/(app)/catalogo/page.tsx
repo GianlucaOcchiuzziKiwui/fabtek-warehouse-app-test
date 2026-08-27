@@ -1,4 +1,4 @@
-import { CatalogFiltersForm } from "@/components/catalog/catalog-filters";
+import { CatalogNavigation } from "@/components/catalog/catalog-navigation";
 import { CatalogResults } from "@/components/catalog/catalog-results";
 import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeading } from "@/components/shared/page-heading";
@@ -6,9 +6,13 @@ import {
   CatalogDataError,
   getCatalogFilters,
   searchCatalog,
+  searchCatalogNavigation,
   type CatalogFilters,
 } from "@/lib/data/catalog";
-import { canonicalizeCatalogFilters } from "@/lib/data/catalog-mappers";
+import {
+  canonicalizeCatalogFilters,
+  resolveCatalogNavigationStep,
+} from "@/lib/data/catalog-mappers";
 import { Suspense } from "react";
 
 type CatalogSearchParams = Promise<Record<string, string | string[] | undefined>>;
@@ -48,22 +52,31 @@ async function CatalogContent({ searchParams }: { searchParams: CatalogSearchPar
   const filters = filtersFromSearchParams(await searchParams);
 
   try {
-    const options = await getCatalogFilters(filters);
+    const [options, searchMatches] = await Promise.all([
+      getCatalogFilters(filters),
+      filters.query ? searchCatalogNavigation(filters.query) : Promise.resolve([]),
+    ]);
     const canonicalFilters = canonicalizeCatalogFilters(filters, options);
-    const result = await searchCatalog(canonicalFilters);
+    const result = resolveCatalogNavigationStep(canonicalFilters) === "items"
+      ? await searchCatalog(canonicalFilters)
+      : null;
 
     return (
-      <div className="space-y-7">
-        <CatalogFiltersForm filters={canonicalFilters} options={options} />
-        <CatalogResults result={result} filters={canonicalFilters} />
-      </div>
+      <CatalogNavigation
+        basePath="/catalogo"
+        filters={canonicalFilters}
+        options={options}
+        searchMatches={searchMatches}
+      >
+        {result ? <CatalogResults result={result} filters={canonicalFilters} /> : null}
+      </CatalogNavigation>
     );
   } catch (error) {
     if (error instanceof CatalogDataError) {
       return (
         <EmptyState
           title="Catalogo non disponibile"
-          description="Non è stato possibile caricare gli articoli. Riprova tra qualche minuto."
+          description="Non è stato possibile caricare il catalogo. Riprova tra qualche minuto."
         />
       );
     }
@@ -76,7 +89,7 @@ export default function CatalogPage({ searchParams }: { searchParams: CatalogSea
     <div className="space-y-8">
       <PageHeading
         title="Catalogo materiali"
-        description="Cerca per codice o descrizione, oppure restringi il catalogo per categoria, famiglia e componente."
+        description="Cerca un percorso oppure naviga Categoria → Famiglia → Componente → Item."
       />
       <Suspense fallback={<CatalogLoading />}>
         <CatalogContent searchParams={searchParams} />

@@ -2,11 +2,13 @@ import "server-only";
 
 import { requirePermission } from "@/lib/auth/current-profile";
 import {
+  mapCatalogNavigationMatches,
   mapCatalogSelections,
   mapCatalogRows,
   normalizeCatalogSelectionInputs,
   type CatalogFilterOptions,
   type CatalogFilters,
+  type CatalogNavigationMatch,
   type CatalogOption,
   type CatalogSelection,
   type CatalogSelectionInput,
@@ -18,6 +20,7 @@ import { createClient } from "@/lib/supabase/server";
 export type {
   CatalogFilterOptions,
   CatalogFilters,
+  CatalogNavigationMatch,
   CatalogOption,
   CatalogSelection,
   CatalogSelectionInput,
@@ -41,6 +44,7 @@ export class CatalogDataError extends Error {
 
 const PAGE_SIZE = 24;
 const MAX_QUERY_LENGTH = 120;
+const NAVIGATION_SEARCH_LIMIT = 12;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const CATALOG_SELECT = `
@@ -121,13 +125,17 @@ function normalizeFilters(filters: CatalogFilters): NormalizedCatalogFilters {
 }
 
 function escapePostgrestSearchPattern(value: string) {
-  const escaped = value
-    .replaceAll("\\", "\\\\")
-    .replaceAll('"', '\\"')
-    .replace(/[%_*]/g, "\\$&");
+  const escaped = escapePostgrestIlikePattern(value);
 
   // Quoted PostgREST values preserve commas and parentheses as literal text.
   return `"%${escaped}%"`;
+}
+
+function escapePostgrestIlikePattern(value: string) {
+  return value
+    .replaceAll("\\", "\\\\")
+    .replaceAll('"', '\\"')
+    .replace(/[%_*]/g, "\\$&");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -228,14 +236,9 @@ export async function getCatalogFilters(
         .eq("family.is_active", true)
         .eq("category.is_active", true)
         .order("sort_order", { referencedTable: "family" })
-    : supabase
-        .from("families")
-        .select("id, name, sort_order")
-        .eq("is_active", true)
-        .order("sort_order")
-        .order("name");
+    : Promise.resolve({ data: [], error: null });
 
-  const componentsQuery = normalized.familyId
+  const componentsQuery = normalized.categoryId && normalized.familyId
     ? supabase
         .from("components")
         .select("id, name, sort_order, family:families!inner(id, is_active)")
@@ -273,11 +276,111 @@ export async function getCatalogFilters(
   };
 }
 
+export async function searchCatalogNavigation(
+  query: string,
+): Promise<CatalogNavigationMatch[]> {
+  await requirePermission("catalog:read");
+  const normalizedQuery = query.trim().slice(0, MAX_QUERY_LENGTH);
+  if (!normalizedQuery) return [];
+
+  const supabase = await createClient();
+  const pattern = `%${escapePostgrestIlikePattern(normalizedQuery)}%`;
+  const [categoriesResponse, familiesResponse, componentsResponse] = await Promise.all([
+    supabase
+      .from("categories")
+      .select("id, name")
+      .eq("is_active", true)
+      .ilike("name", pattern)
+      .order("name")
+      .limit(NAVIGATION_SEARCH_LIMIT),
+    supabase
+      .from("category_families")
+      .select("category:categories!inner(id, name, is_active), family:families!inner(id, name, is_active)")
+      .eq("is_active", true)
+      .eq("category.is_active", true)
+      .eq("family.is_active", true)
+      .ilike("family.name", pattern)
+      .order("name", { referencedTable: "family" })
+      .order("name", { referencedTable: "category" })
+      .limit(NAVIGATION_SEARCH_LIMIT),
+    supabase
+      .from("components")
+      .select("id, name, family:families!inner(id, name, is_active)")
+      .eq("is_active", true)
+      .eq("family.is_active", true)
+      .ilike("name", pattern)
+      .order("name")
+      .limit(NAVIGATION_SEARCH_LIMIT),
+  ]);
+
+  if (categoriesResponse.error) reportCatalogError("search categories", categoriesResponse.error);
+  if (familiesResponse.error) reportCatalogError("search families", familiesResponse.error);
+  if (componentsResponse.error) reportCatalogError("search components", componentsResponse.error);
+
+  const componentRows = Array.isArray(componentsResponse.data)
+    ? componentsResponse.data.filter(isRecord)
+    : [];
+  const componentFamilyIds = [...new Set(componentRows.flatMap((row) => {
+    const family = isRecord(row.family)
+      ? row.family
+      : Array.isArray(row.family) && isRecord(row.family[0])
+        ? row.family[0]
+        : null;
+    const familyId = family ? text(family.id) : null;
+    return familyId ? [familyId] : [];
+  }))];
+
+  const componentPathsResponse = componentFamilyIds.length > 0
+    ? await supabase
+        .from("category_families")
+        .select("family_id, category:categories!inner(id, name, is_active)")
+        .in("family_id", componentFamilyIds)
+        .eq("is_active", true)
+        .eq("category.is_active", true)
+        .order("name", { referencedTable: "category" })
+    : { data: [], error: null };
+  if (componentPathsResponse.error) {
+    reportCatalogError("load component category paths", componentPathsResponse.error);
+  }
+
+  const categoryPathsByFamily = new Map<string, unknown[]>();
+  for (const value of componentPathsResponse.data ?? []) {
+    if (!isRecord(value)) continue;
+    const familyId = text(value.family_id);
+    if (!familyId) continue;
+    const paths = categoryPathsByFamily.get(familyId) ?? [];
+    paths.push(value.category);
+    categoryPathsByFamily.set(familyId, paths);
+  }
+
+  const rawMatches: unknown[] = [
+    ...(categoriesResponse.data ?? []).map((category) => ({ kind: "category", category })),
+    ...(familiesResponse.data ?? []).map((relation) => isRecord(relation)
+      ? { kind: "family", category: relation.category, family: relation.family }
+      : relation),
+  ];
+
+  for (const component of componentRows) {
+    const family = Array.isArray(component.family) ? component.family[0] : component.family;
+    if (!isRecord(family)) continue;
+    const familyId = text(family.id);
+    if (!familyId) continue;
+    for (const category of categoryPathsByFamily.get(familyId) ?? []) {
+      rawMatches.push({ kind: "component", category, family, component });
+    }
+  }
+
+  return mapCatalogNavigationMatches(rawMatches);
+}
+
 export async function searchCatalog(
   filters: CatalogFilters,
 ): Promise<CatalogSearchResult> {
   await requirePermission("catalog:read");
   const normalized = normalizeFilters(filters);
+  if (!normalized.categoryId || !normalized.familyId || !normalized.componentId) {
+    return { items: [], page: 1, pageSize: PAGE_SIZE, total: 0 };
+  }
   const supabase = await createClient();
   const from = (normalized.page - 1) * PAGE_SIZE;
 

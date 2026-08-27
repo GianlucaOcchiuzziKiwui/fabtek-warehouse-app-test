@@ -111,6 +111,8 @@ Il catalogo presenta questo imbuto all'utente:
 
 L'imbuto è una modalità di navigazione, non una catena di appartenenza uno-a-molti: una stessa variante può essere compatibile con più categorie/utilità di impianto. La categoria selezionata deve quindi filtrare le varianti tramite un'associazione molti-a-molti, mentre famiglia e componente descrivono la tassonomia tecnica del prodotto.
 
+La ricerca è separata dall'imbuto e restituisce soltanto corrispondenze di categoria, famiglia o componente. Ogni corrispondenza espone il percorso tassonomico completo e, una volta selezionata, riporta l'utente nel relativo punto dell'imbuto. Senza ricerca la pagina mostra inizialmente solo le categorie; gli item vengono caricati esclusivamente dopo la scelta del componente.
+
 Categorie iniziali da importare e successivamente rendere amministrabili tramite tabelle relazionali:
 
 - PV — Process Vacuum

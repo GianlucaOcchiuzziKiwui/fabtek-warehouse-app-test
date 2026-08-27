@@ -87,7 +87,6 @@ test("does not invent a supplier or datasheet when relations are empty", () => {
 
 test("clears stale descendants when a parent catalog filter changes", () => {
   const filters = canonicalizeCatalogFilters({
-    query: "tubo",
     categoryId: "30000000-0000-0000-0000-000000000002",
     familyId: "50000000-0000-0000-0000-000000000001",
     componentId: "40000000-0000-0000-0000-000000000001",
@@ -105,7 +104,6 @@ test("clears stale descendants when a parent catalog filter changes", () => {
   });
 
   assert.deepEqual(filters, {
-    query: "tubo",
     categoryId: "30000000-0000-0000-0000-000000000002",
     familyId: undefined,
     componentId: undefined,

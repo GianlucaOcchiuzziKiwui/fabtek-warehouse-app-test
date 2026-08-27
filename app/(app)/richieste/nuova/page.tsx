@@ -11,9 +11,13 @@ import {
   getCatalogFilters,
   getCatalogVariantSelection,
   searchCatalog,
+  searchCatalogNavigation,
   type CatalogFilters,
 } from "@/lib/data/catalog";
-import { canonicalizeCatalogFilters } from "@/lib/data/catalog-mappers";
+import {
+  canonicalizeCatalogFilters,
+  resolveCatalogNavigationStep,
+} from "@/lib/data/catalog-mappers";
 import { Suspense } from "react";
 
 type RequestSearchParams = Promise<Record<string, string | string[] | undefined>>;
@@ -62,19 +66,23 @@ async function RequestCatalogContent({ searchParams }: { searchParams: RequestSe
   );
 
   try {
-    const [options, selectedVariant] = await Promise.all([
+    const [options, selectedVariant, searchMatches] = await Promise.all([
       getCatalogFilters(filters),
       variantId && selectedCategoryId
         ? getCatalogVariantSelection(variantId, selectedCategoryId)
         : Promise.resolve(null),
+      filters.query ? searchCatalogNavigation(filters.query) : Promise.resolve([]),
     ]);
     const canonicalFilters = canonicalizeCatalogFilters(filters, options);
-    const result = await searchCatalog(canonicalFilters);
+    const result = resolveCatalogNavigationStep(canonicalFilters) === "items"
+      ? await searchCatalog(canonicalFilters)
+      : { items: [], page: 1, pageSize: 24, total: 0 };
 
     return (
       <RequestCatalogPicker
         filters={canonicalFilters}
         options={options}
+        searchMatches={searchMatches}
         result={result}
         selectedVariant={selectedVariant}
         selectedCategoryId={selectedCategoryId}

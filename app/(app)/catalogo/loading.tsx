@@ -5,7 +5,7 @@ export default function CatalogPageLoading() {
     <div className="space-y-8">
       <PageHeading
         title="Catalogo materiali"
-        description="Cerca per codice o descrizione, oppure restringi il catalogo per categoria, famiglia e componente."
+        description="Cerca un percorso oppure naviga Categoria → Famiglia → Componente → Item."
       />
       <div className="space-y-6" aria-label="Caricamento catalogo">
         <div className="h-52 animate-pulse rounded-xl border border-border bg-muted/60" />

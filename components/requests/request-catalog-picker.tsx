@@ -1,5 +1,5 @@
 import { AvailabilityBadge } from "@/components/catalog/availability-badge";
-import { CatalogFiltersForm } from "@/components/catalog/catalog-filters";
+import { CatalogNavigation } from "@/components/catalog/catalog-navigation";
 import { AddToRequestButton } from "@/components/requests/add-to-request-button";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import type {
   CatalogFilterOptions,
   CatalogFilters,
+  CatalogNavigationMatch,
   CatalogSearchResult,
   CatalogVariant,
 } from "@/lib/data/catalog";
@@ -109,6 +110,7 @@ function RequestPagination({
 export function RequestCatalogPicker({
   filters,
   options,
+  searchMatches,
   result,
   selectedVariant,
   selectedCategoryId,
@@ -116,6 +118,7 @@ export function RequestCatalogPicker({
 }: {
   filters: CatalogFilters;
   options: CatalogFilterOptions;
+  searchMatches: CatalogNavigationMatch[];
   result: CatalogSearchResult;
   selectedVariant: CatalogVariant | null;
   selectedCategoryId?: string;
@@ -160,34 +163,33 @@ export function RequestCatalogPicker({
         </div>
       ) : null}
 
-      <CatalogFiltersForm
+      <CatalogNavigation
+        basePath="/richieste/nuova"
         filters={filters}
         options={options}
-        action="/richieste/nuova"
-        resetHref="/richieste/nuova"
-      />
-
-      {result.items.length === 0 ? (
-        <EmptyState
-          title="Nessun articolo trovato"
-          description="Modifica o azzera i filtri per ampliare la ricerca."
-          action={<Button asChild variant="outline"><Link href="/richieste/nuova">Azzera filtri</Link></Button>}
-        />
-      ) : (
-        <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            {result.total} {result.total === 1 ? "articolo trovato" : "articoli trovati"}
-          </p>
-          {resultItems.map((variant) => (
-            <VariantDetails
-              key={`${variant.id}:${filters.categoryId ?? "all"}`}
-              variant={variant}
-              selectedCategoryId={filters.categoryId}
-            />
-          ))}
-          <RequestPagination result={result} filters={filters} />
-        </div>
-      )}
+        searchMatches={searchMatches}
+      >
+        {result.items.length === 0 ? (
+          <EmptyState
+            title="Nessun item disponibile"
+            description="Il componente selezionato non contiene item attivi per questa categoria."
+          />
+        ) : (
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              {result.total} {result.total === 1 ? "item trovato" : "item trovati"}
+            </p>
+            {resultItems.map((variant) => (
+              <VariantDetails
+                key={`${variant.id}:${filters.categoryId ?? "all"}`}
+                variant={variant}
+                selectedCategoryId={filters.categoryId}
+              />
+            ))}
+            <RequestPagination result={result} filters={filters} />
+          </div>
+        )}
+      </CatalogNavigation>
     </section>
   );
 }

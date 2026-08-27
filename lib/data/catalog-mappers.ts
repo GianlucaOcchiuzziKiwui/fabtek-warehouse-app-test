@@ -17,6 +17,87 @@ export type CatalogFilterOptions = {
   components: CatalogOption[];
 };
 
+export type CatalogNavigationStep =
+  | "search"
+  | "categories"
+  | "families"
+  | "components"
+  | "items";
+
+export type CatalogNavigationKind = "category" | "family" | "component";
+
+const CATALOG_NAVIGATION_KIND_LABELS: Record<
+  CatalogNavigationKind,
+  readonly [singular: string, plural: string]
+> = {
+  category: ["Categoria", "Categorie"],
+  family: ["Famiglia", "Famiglie"],
+  component: ["Componente", "Componenti"],
+};
+
+export function getCatalogNavigationKindLabel(
+  kind: CatalogNavigationKind,
+  count = 1,
+): string {
+  return CATALOG_NAVIGATION_KIND_LABELS[kind][count === 1 ? 0 : 1];
+}
+
+export type CatalogNavigationMatch = {
+  kind: CatalogNavigationKind;
+  category: CatalogOption;
+  family: CatalogOption | null;
+  component: CatalogOption | null;
+};
+
+export function resolveCatalogNavigationStep(
+  filters: CatalogFilters,
+): CatalogNavigationStep {
+  if (filters.query?.trim()) return "search";
+  if (!filters.categoryId) return "categories";
+  if (!filters.familyId) return "families";
+  if (!filters.componentId) return "components";
+  return "items";
+}
+
+export function mapCatalogNavigationMatches(
+  rows: readonly unknown[],
+): CatalogNavigationMatch[] {
+  const matches: CatalogNavigationMatch[] = [];
+  const keys = new Set<string>();
+
+  for (const value of rows) {
+    if (!isRecord(value)) continue;
+    const kind = text(value.kind);
+    if (kind !== "category" && kind !== "family" && kind !== "component") {
+      continue;
+    }
+
+    const category = mapOption(value.category);
+    const family = kind === "category" ? null : mapOption(value.family);
+    const component = kind === "component" ? mapOption(value.component) : null;
+    if (!category || (kind !== "category" && !family) || (kind === "component" && !component)) {
+      continue;
+    }
+
+    const key = [kind, category.id, family?.id, component?.id].filter(Boolean).join(":");
+    if (keys.has(key)) continue;
+    keys.add(key);
+    matches.push({ kind, category, family, component });
+  }
+
+  return matches;
+}
+
+export function buildCatalogNavigationHref(
+  basePath: string,
+  match: CatalogNavigationMatch,
+): string {
+  const params = new URLSearchParams({ category: match.category.id });
+  if (match.family) params.set("family", match.family.id);
+  if (match.component) params.set("component", match.component.id);
+  return `${basePath}?${params}`;
+}
+
 export type StockStatus =
   | "available"
   | "low_stock"
@@ -242,11 +323,21 @@ export function canonicalizeCatalogFilters(
   filters: CatalogFilters,
   options: CatalogFilterOptions,
 ): CatalogFilters {
+  if (filters.query?.trim()) {
+    return {
+      ...filters,
+      categoryId: undefined,
+      familyId: undefined,
+      componentId: undefined,
+      page: 1,
+    };
+  }
+
   const categoryId = filters.categoryId
     && includesOption(options.categories, filters.categoryId)
     ? filters.categoryId
     : undefined;
-  const familyId = (!filters.categoryId || categoryId)
+  const familyId = categoryId
     && filters.familyId
     && includesOption(options.families, filters.familyId)
     ? filters.familyId
