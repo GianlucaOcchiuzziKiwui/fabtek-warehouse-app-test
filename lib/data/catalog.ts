@@ -4,6 +4,7 @@ import { requirePermission } from "@/lib/auth/current-profile";
 import {
   mapCatalogNavigationMatches,
   mapCatalogOptions,
+  mapDerivedCatalogOptions,
   mapCatalogSelections,
   mapCatalogRows,
   normalizeCatalogSelectionInputs,
@@ -47,6 +48,51 @@ const PAGE_SIZE = 24;
 const MAX_QUERY_LENGTH = 120;
 const NAVIGATION_SEARCH_LIMIT = 12;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const DERIVED_TAXONOMY_SELECT = `
+  item_variant:item_variants!inner(
+    is_active,
+    component:components!inner(
+      id,
+      name,
+      icon_key,
+      sort_order,
+      family_id,
+      is_active,
+      family:families!inner(id, name, icon_key, sort_order, is_active)
+    )
+  )
+`;
+
+const FAMILY_SEARCH_SELECT = `
+  id,
+  name,
+  icon_key,
+  is_active,
+  components:components!inner(
+    is_active,
+    items:item_variants!inner(
+      is_active,
+      categories:item_variant_categories!inner(
+        category:categories!inner(id, name, icon_key, is_active)
+      )
+    )
+  )
+`;
+
+const COMPONENT_SEARCH_SELECT = `
+  id,
+  name,
+  icon_key,
+  is_active,
+  family:families!inner(id, name, icon_key, is_active),
+  items:item_variants!inner(
+    is_active,
+    categories:item_variant_categories!inner(
+      category:categories!inner(id, name, icon_key, is_active)
+    )
+  )
+`;
 
 const CATALOG_SELECT = `
   id,
@@ -151,6 +197,23 @@ function text(value: unknown): string | null {
   return normalized || null;
 }
 
+function recordArray(value: unknown): Record<string, unknown>[] {
+  if (isRecord(value)) return [value];
+  return Array.isArray(value) ? value.filter(isRecord) : [];
+}
+
+function collectItemCategories(items: unknown): unknown[] {
+  return recordArray(items).flatMap((item) => (
+    recordArray(item.categories).map((relation) => relation.category)
+  ));
+}
+
+function collectFamilyCategories(components: unknown): unknown[] {
+  return recordArray(components).flatMap((component) => (
+    collectItemCategories(component.items)
+  ));
+}
+
 function collectDatasheetStoragePaths(rows: unknown) {
   const paths = new Set<string>();
   if (!Array.isArray(rows)) return paths;
@@ -215,24 +278,23 @@ export async function getCatalogFilters(
 
   const familiesQuery = normalized.categoryId
     ? supabase
-        .from("category_families")
-        .select("family:families!inner(id, name, icon_key, sort_order, is_active), category:categories!inner(id, is_active)")
+        .from("item_variant_categories")
+        .select(DERIVED_TAXONOMY_SELECT)
         .eq("category_id", normalized.categoryId)
-        .eq("is_active", true)
-        .eq("family.is_active", true)
-        .eq("category.is_active", true)
-        .order("sort_order", { referencedTable: "family" })
+        .eq("item_variant.is_active", true)
+        .eq("item_variant.component.is_active", true)
+        .eq("item_variant.component.family.is_active", true)
     : Promise.resolve({ data: [], error: null });
 
   const componentsQuery = normalized.categoryId && normalized.familyId
     ? supabase
-        .from("components")
-        .select("id, name, icon_key, sort_order, family:families!inner(id, is_active)")
-        .eq("family_id", normalized.familyId)
-        .eq("is_active", true)
-        .eq("family.is_active", true)
-        .order("sort_order")
-        .order("name")
+        .from("item_variant_categories")
+        .select(DERIVED_TAXONOMY_SELECT)
+        .eq("category_id", normalized.categoryId)
+        .eq("item_variant.is_active", true)
+        .eq("item_variant.component.is_active", true)
+        .eq("item_variant.component.family_id", normalized.familyId)
+        .eq("item_variant.component.family.is_active", true)
     : Promise.resolve({ data: [], error: null });
 
   const [categoriesResponse, familiesResponse, componentsResponse] = await Promise.all([
@@ -246,11 +308,7 @@ export async function getCatalogFilters(
   if (componentsResponse.error) reportCatalogError("load components", componentsResponse.error);
 
   const categories = mapCatalogOptions(categoriesResponse.data, "factory");
-  const families = mapCatalogOptions(
-    familiesResponse.data,
-    "boxes",
-    normalized.categoryId ? "family" : undefined,
-  );
+  const families = mapDerivedCatalogOptions(familiesResponse.data, "family");
   const familyIsSelectable = !normalized.familyId
     || families.some((option) => option.id === normalized.familyId);
 
@@ -258,7 +316,7 @@ export async function getCatalogFilters(
     categories,
     families,
     components: familyIsSelectable
-      ? mapCatalogOptions(componentsResponse.data, "component")
+      ? mapDerivedCatalogOptions(componentsResponse.data, "component")
       : [],
   };
 }
@@ -281,20 +339,22 @@ export async function searchCatalogNavigation(
       .order("name")
       .limit(NAVIGATION_SEARCH_LIMIT),
     supabase
-      .from("category_families")
-      .select("category:categories!inner(id, name, icon_key, is_active), family:families!inner(id, name, icon_key, is_active)")
+      .from("families")
+      .select(FAMILY_SEARCH_SELECT)
       .eq("is_active", true)
-      .eq("category.is_active", true)
-      .eq("family.is_active", true)
-      .ilike("family.name", pattern)
-      .order("name", { referencedTable: "family" })
-      .order("name", { referencedTable: "category" })
+      .eq("components.is_active", true)
+      .eq("components.items.is_active", true)
+      .eq("components.items.categories.category.is_active", true)
+      .ilike("name", pattern)
+      .order("name")
       .limit(NAVIGATION_SEARCH_LIMIT),
     supabase
       .from("components")
-      .select("id, name, icon_key, family:families!inner(id, name, icon_key, is_active)")
+      .select(COMPONENT_SEARCH_SELECT)
       .eq("is_active", true)
       .eq("family.is_active", true)
+      .eq("items.is_active", true)
+      .eq("items.categories.category.is_active", true)
       .ilike("name", pattern)
       .order("name")
       .limit(NAVIGATION_SEARCH_LIMIT),
@@ -304,56 +364,24 @@ export async function searchCatalogNavigation(
   if (familiesResponse.error) reportCatalogError("search families", familiesResponse.error);
   if (componentsResponse.error) reportCatalogError("search components", componentsResponse.error);
 
-  const componentRows = Array.isArray(componentsResponse.data)
-    ? componentsResponse.data.filter(isRecord)
-    : [];
-  const componentFamilyIds = [...new Set(componentRows.flatMap((row) => {
-    const family = isRecord(row.family)
-      ? row.family
-      : Array.isArray(row.family) && isRecord(row.family[0])
-        ? row.family[0]
-        : null;
-    const familyId = family ? text(family.id) : null;
-    return familyId ? [familyId] : [];
-  }))];
-
-  const componentPathsResponse = componentFamilyIds.length > 0
-    ? await supabase
-        .from("category_families")
-        .select("family_id, category:categories!inner(id, name, icon_key, is_active)")
-        .in("family_id", componentFamilyIds)
-        .eq("is_active", true)
-        .eq("category.is_active", true)
-        .order("name", { referencedTable: "category" })
-    : { data: [], error: null };
-  if (componentPathsResponse.error) {
-    reportCatalogError("load component category paths", componentPathsResponse.error);
-  }
-
-  const categoryPathsByFamily = new Map<string, unknown[]>();
-  for (const value of componentPathsResponse.data ?? []) {
-    if (!isRecord(value)) continue;
-    const familyId = text(value.family_id);
-    if (!familyId) continue;
-    const paths = categoryPathsByFamily.get(familyId) ?? [];
-    paths.push(value.category);
-    categoryPathsByFamily.set(familyId, paths);
-  }
-
   const rawMatches: unknown[] = [
     ...(categoriesResponse.data ?? []).map((category) => ({ kind: "category", category })),
-    ...(familiesResponse.data ?? []).map((relation) => isRecord(relation)
-      ? { kind: "family", category: relation.category, family: relation.family }
-      : relation),
   ];
 
-  for (const component of componentRows) {
-    const family = Array.isArray(component.family) ? component.family[0] : component.family;
-    if (!isRecord(family)) continue;
-    const familyId = text(family.id);
-    if (!familyId) continue;
-    for (const category of categoryPathsByFamily.get(familyId) ?? []) {
-      rawMatches.push({ kind: "component", category, family, component });
+  for (const family of recordArray(familiesResponse.data)) {
+    for (const category of collectFamilyCategories(family.components)) {
+      rawMatches.push({ kind: "family", category, family });
+    }
+  }
+
+  for (const component of recordArray(componentsResponse.data)) {
+    for (const category of collectItemCategories(component.items)) {
+      rawMatches.push({
+        kind: "component",
+        category,
+        family: component.family,
+        component,
+      });
     }
   }
 
