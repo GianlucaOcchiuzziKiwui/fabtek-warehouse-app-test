@@ -11,9 +11,11 @@ test("draft quantity errors are programmatically associated with their input", a
 
 test("catalog-picker quantity errors are programmatically associated with their input", async () => {
   const source = await readFile("components/requests/add-to-request-button.tsx", "utf8");
+  const errorParagraphPattern = /<p(?=[\s>])[^>]*\sid=\{quantityErrorId\}/u;
 
   assert.match(source, /aria-describedby=\{showQuantityError \? quantityErrorId : undefined\}/u);
-  assert.match(source, /<p\s+[^>]*\bid=\{quantityErrorId\}/u);
+  assert.doesNotMatch("<p data-id={quantityErrorId}>", errorParagraphPattern);
+  assert.match(source, errorParagraphPattern);
 });
 
 test("request retries expose the locked original payload and retry guidance", async () => {
