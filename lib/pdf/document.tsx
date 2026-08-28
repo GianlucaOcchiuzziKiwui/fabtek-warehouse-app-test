@@ -76,8 +76,8 @@ function InitialLine({ line }: { line: PdfLine }) {
 }
 
 function FinalLine({ line }: { line: PdfLine }) {
-  return <View wrap={false}>
-    <View style={styles.tableRow}>
+  return <>
+    <View style={styles.tableRow} wrap={false}>
       <Text style={[styles.compactCell, styles.finalCode]}>{line.fabtekCode}</Text>
       <Text style={[styles.compactCell, styles.finalDescription]}>{lineDescription(line)}</Text>
       <Text style={[styles.compactCell, styles.finalDetails]}>{lineDetails(line)}</Text>
@@ -85,10 +85,10 @@ function FinalLine({ line }: { line: PdfLine }) {
       <Text style={[styles.compactCell, styles.finalQuantity]}>{line.fulfilledQuantity ?? 0} {line.unitOfMeasure}</Text>
       <Text style={[styles.compactCell, styles.finalLastQuantity]}>{line.remainingQuantity ?? line.requestedQuantity} {line.unitOfMeasure}</Text>
     </View>
-    <View style={styles.history}>
-      <Text>Storico: {line.fulfillments?.length ? line.fulfillments.map((fulfillment) => `${fulfillment.fulfilledAtLabel}: ${fulfillment.quantity} ${line.unitOfMeasure}${fulfillment.notes ? ` — ${fulfillment.notes}` : ""}`).join(" · ") : "Nessuna evasione registrata"}</Text>
-    </View>
-  </View>;
+    {line.fulfillments?.length ? line.fulfillments.map((fulfillment, index) => <View key={`${fulfillment.fulfilledAtLabel}-${index}`} style={styles.history}>
+      <Text>{index === 0 ? "Storico: " : ""}{fulfillment.fulfilledAtLabel}: {fulfillment.quantity} {line.unitOfMeasure}{fulfillment.notes ? ` — ${fulfillment.notes}` : ""}</Text>
+    </View>) : <View style={styles.history}><Text>Storico: Nessuna evasione registrata</Text></View>}
+  </>;
 }
 
 function MaterialTable({ document }: { document: PdfDocument }) {
