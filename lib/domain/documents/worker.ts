@@ -51,14 +51,31 @@ export type NotificationDetails = {
 
 export type DocumentWorkerFailureEvent = {
   jobId: string;
-  phase: "fail_document" | "fail_notification";
+  phase:
+    | "load_source"
+    | "map_document"
+    | "render"
+    | "prepare_upload"
+    | "upload"
+    | "resolve_notification"
+    | "complete_document"
+    | "load_document"
+    | "download"
+    | "send_email"
+    | "complete_notification"
+    | "fail_document"
+    | "fail_notification";
   attempt: number;
   errorCode: string;
+  durationMs: number;
 };
 
 export type DocumentWorkerDependencies = {
   claimDocuments: (input: ClaimDocumentJobsInput) => Promise<ClaimedDocumentJob[]>;
-  loadSource: (requestId: string) => Promise<OfficialPdfSource>;
+  loadSource: (
+    requestId: string,
+    kind: OfficialDocumentKind,
+  ) => Promise<OfficialPdfSource>;
   render: (document: PdfDocument) => Promise<Buffer>;
   upload: (path: string, buffer: Buffer) => Promise<void>;
   resolveNotification: (
@@ -205,7 +222,7 @@ function buildDependencies(
     completeDocument: completeGeneratedDocumentJob,
     failDocument: failGeneratedDocumentJob,
     reportFailure: (event) => {
-      console.error("Document worker failure persistence failed", event);
+      console.error("Document worker failure", event);
     },
     now: () => new Date(),
     ...overrides,
@@ -228,7 +245,7 @@ function buildNotificationDependencies(
     completeNotification: completeNotificationJob,
     failNotification: failNotificationJob,
     reportFailure: (event) => {
-      console.error("Notification worker failure persistence failed", event);
+      console.error("Notification worker failure", event);
     },
     now: () => new Date(),
     ...overrides,
@@ -260,23 +277,51 @@ function assertMatchingNotificationDocument(
   }
 }
 
+function durationMs(startedAt: Date, failedAt: Date) {
+  return Math.max(0, failedAt.getTime() - startedAt.getTime());
+}
+
+function reportFailureSafely(
+  reporter: (event: DocumentWorkerFailureEvent) => void,
+  event: DocumentWorkerFailureEvent,
+) {
+  try {
+    reporter(event);
+  } catch {
+    // Observability must not prevent later jobs from being claimed.
+  }
+}
+
 export async function processDocumentJobs(
   options: DocumentJobOptions = {},
   dependencies: Partial<DocumentWorkerDependencies> = {},
 ): Promise<JobBatchResult> {
   const resolvedDependencies = buildDependencies(dependencies);
   const claimOptions = resolveOptions(options, dependencies.claimDocuments !== undefined);
-  const jobs = await resolvedDependencies.claimDocuments(claimOptions);
   const result: JobBatchResult = {
-    claimed: jobs.length,
+    claimed: 0,
     completed: 0,
     failed: 0,
   };
 
-  for (const job of jobs) {
+  while (result.claimed < claimOptions.batchSize) {
+    const [job] = await resolvedDependencies.claimDocuments({
+      batchSize: 1,
+      leaseSeconds: claimOptions.leaseSeconds,
+    });
+    if (!job) break;
+    result.claimed += 1;
+    const startedAt = resolvedDependencies.now();
+    let phase: DocumentWorkerFailureEvent["phase"] = "load_source";
+
     try {
-      const source = await resolvedDependencies.loadSource(job.requestId);
+      const source = await resolvedDependencies.loadSource(
+        job.requestId,
+        job.documentType,
+      );
+      phase = "map_document";
       const document = mapOfficialPdfDocument(source, job.documentType);
+      phase = "render";
       const buffer = await resolvedDependencies.render(document);
       if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
         throw Object.assign(new Error("PDF non valido."), {
@@ -284,13 +329,17 @@ export async function processDocumentJobs(
         });
       }
 
+      phase = "prepare_upload";
       const sha256 = createHash("sha256").update(buffer).digest("hex");
       const path = storagePath(job, sha256);
+      phase = "upload";
       await resolvedDependencies.upload(path, buffer);
+      phase = "resolve_notification";
       const notification = resolvedDependencies.resolveNotification(
         source,
         job.documentType,
       );
+      phase = "complete_document";
       await resolvedDependencies.completeDocument({
         jobId: job.id,
         attempts: job.attempts,
@@ -303,7 +352,8 @@ export async function processDocumentJobs(
       result.completed += 1;
     } catch (error) {
       result.failed += 1;
-      const retry = getRetryDecision(job.attempts, resolvedDependencies.now());
+      const failedAt = resolvedDependencies.now();
+      const retry = getRetryDecision(job.attempts, failedAt);
       try {
         await resolvedDependencies.failDocument({
           jobId: job.id,
@@ -313,17 +363,23 @@ export async function processDocumentJobs(
           terminal: retry.terminal,
         });
       } catch (failureError) {
-        try {
-          resolvedDependencies.reportFailure({
-            jobId: job.id,
-            phase: "fail_document",
-            attempt: job.attempts,
-            errorCode: errorCode(failureError),
-          });
-        } catch {
-          // Reporting must not stop other leased jobs in the same batch.
-        }
+        const persistenceFailedAt = resolvedDependencies.now();
+        reportFailureSafely(resolvedDependencies.reportFailure, {
+          jobId: job.id,
+          phase: "fail_document",
+          attempt: job.attempts,
+          errorCode: errorCode(failureError),
+          durationMs: durationMs(startedAt, persistenceFailedAt),
+        });
+        continue;
       }
+      reportFailureSafely(resolvedDependencies.reportFailure, {
+        jobId: job.id,
+        phase,
+        attempt: job.attempts,
+        errorCode: errorCode(error),
+        durationMs: durationMs(startedAt, failedAt),
+      });
     }
   }
 
@@ -339,25 +395,35 @@ export async function processNotificationJobs(
     options,
     dependencies.claimNotifications !== undefined,
   );
-  const jobs = await resolvedDependencies.claimNotifications(claimOptions);
   const result: JobBatchResult = {
-    claimed: jobs.length,
+    claimed: 0,
     completed: 0,
     failed: 0,
   };
 
-  for (const job of jobs) {
+  while (result.claimed < claimOptions.batchSize) {
+    const [job] = await resolvedDependencies.claimNotifications({
+      batchSize: 1,
+      leaseSeconds: claimOptions.leaseSeconds,
+    });
+    if (!job) break;
+    result.claimed += 1;
+    const startedAt = resolvedDependencies.now();
+    let phase: DocumentWorkerFailureEvent["phase"] = "load_document";
+
     try {
       const document = await resolvedDependencies.loadCompletedDocument(
         job.documentId,
       );
       assertMatchingNotificationDocument(job, document);
+      phase = "download";
       const buffer = await resolvedDependencies.download(document.storagePath);
       if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
         throw Object.assign(new Error("PDF notifica non valido."), {
           code: "INVALID_GENERATED_PDF",
         });
       }
+      phase = "send_email";
       const { providerMessageId } = await resolvedDependencies.sendEmail({
         recipients: job.recipients,
         subject: job.subject,
@@ -370,6 +436,7 @@ export async function processNotificationJobs(
         },
         idempotencyKey: `document-notification/${job.id}`,
       });
+      phase = "complete_notification";
       await resolvedDependencies.completeNotification({
         jobId: job.id,
         attempts: job.attempts,
@@ -378,7 +445,8 @@ export async function processNotificationJobs(
       result.completed += 1;
     } catch (error) {
       result.failed += 1;
-      const retry = getRetryDecision(job.attempts, resolvedDependencies.now());
+      const failedAt = resolvedDependencies.now();
+      const retry = getRetryDecision(job.attempts, failedAt);
       try {
         await resolvedDependencies.failNotification({
           jobId: job.id,
@@ -388,17 +456,23 @@ export async function processNotificationJobs(
           terminal: retry.terminal,
         });
       } catch (failureError) {
-        try {
-          resolvedDependencies.reportFailure({
-            jobId: job.id,
-            phase: "fail_notification",
-            attempt: job.attempts,
-            errorCode: errorCode(failureError),
-          });
-        } catch {
-          // Reporting must not stop other leased jobs in the same batch.
-        }
+        const persistenceFailedAt = resolvedDependencies.now();
+        reportFailureSafely(resolvedDependencies.reportFailure, {
+          jobId: job.id,
+          phase: "fail_notification",
+          attempt: job.attempts,
+          errorCode: errorCode(failureError),
+          durationMs: durationMs(startedAt, persistenceFailedAt),
+        });
+        continue;
       }
+      reportFailureSafely(resolvedDependencies.reportFailure, {
+        jobId: job.id,
+        phase,
+        attempt: job.attempts,
+        errorCode: errorCode(error),
+        durationMs: durationMs(startedAt, failedAt),
+      });
     }
   }
 

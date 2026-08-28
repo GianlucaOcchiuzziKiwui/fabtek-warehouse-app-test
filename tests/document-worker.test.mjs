@@ -37,6 +37,7 @@ const {
   downloadGeneratedPdf,
   failNotificationJob,
   loadCompletedGeneratedDocument,
+  loadOfficialPdfSource,
   claimGeneratedDocumentJobs,
   uploadGeneratedPdf,
 } = await import("../lib/data/documents.ts");
@@ -116,8 +117,16 @@ const officialSource = {
 };
 
 function workerDependencies(overrides = {}) {
+  let shouldClaim = true;
   return {
-    claimDocuments: async () => [job],
+    claimDocuments: async () => {
+      if (shouldClaim) {
+        shouldClaim = false;
+        return [job];
+      }
+      shouldClaim = true;
+      return [];
+    },
     loadSource: async () => officialSource,
     render: async () => Buffer.from("%PDF-test"),
     upload: async () => {},
@@ -127,34 +136,52 @@ function workerDependencies(overrides = {}) {
     }),
     completeDocument: async () => {},
     failDocument: async () => {},
+    reportFailure: () => {},
     now: () => new Date("2026-08-28T10:00:00Z"),
     ...overrides,
   };
 }
 
 function notificationWorkerDependencies(overrides = {}) {
+  let shouldClaim = true;
   return {
-    claimNotifications: async () => [notificationJob],
+    claimNotifications: async () => {
+      if (shouldClaim) {
+        shouldClaim = false;
+        return [notificationJob];
+      }
+      shouldClaim = true;
+      return [];
+    },
     loadCompletedDocument: async () => completedDocument,
     download: async () => Buffer.from("%PDF-email"),
     sendEmail: async () => ({ providerMessageId: "provider-message-1" }),
     completeNotification: async () => {},
     failNotification: async () => {},
+    reportFailure: () => {},
     now: () => new Date("2026-08-28T10:00:00Z"),
     ...overrides,
+  };
+}
+
+function sequentialClaimer(jobs) {
+  const queue = [...jobs];
+  return async () => {
+    const nextJob = queue.shift();
+    return nextJob ? [nextJob] : [];
   };
 }
 
 test("processes an official request in order with deterministic storage metadata and lease fencing", async () => {
   const calls = [];
 
-  const result = await processDocumentJobs({ batchSize: 5 }, workerDependencies({
+  const result = await processDocumentJobs({ batchSize: 1 }, workerDependencies({
     claimDocuments: async (input) => {
       calls.push(["claim", input]);
       return [job];
     },
-    loadSource: async (requestId) => {
-      calls.push(["load", requestId]);
+    loadSource: async (requestId, kind) => {
+      calls.push(["load", { requestId, kind }]);
       return officialSource;
     },
     render: async (document) => {
@@ -185,7 +212,11 @@ test("processes an official request in order with deterministic storage metadata
     "notification",
     "complete",
   ]);
-  assert.deepEqual(calls[0][1], { batchSize: 5, leaseSeconds: 300 });
+  assert.deepEqual(calls[0][1], { batchSize: 1, leaseSeconds: 300 });
+  assert.deepEqual(calls[1][1], {
+    requestId: REQUEST_ID,
+    kind: "initial_request",
+  });
   assert.equal(calls[2][1].lines[0].requestedQuantity, 10);
   assert.equal("fulfilledQuantity" in calls[2][1].lines[0], false);
   assert.equal(
@@ -229,7 +260,7 @@ test("maps a final report with fulfillment quantities and chronologically ordere
     }],
   };
 
-  const result = await processDocumentJobs({}, workerDependencies({
+  const result = await processDocumentJobs({ batchSize: 1 }, workerDependencies({
     claimDocuments: async () => [reportJob],
     loadSource: async () => reportSource,
     render: async (document) => {
@@ -257,7 +288,7 @@ test("fails only the current job after a render error and passes the claimed att
   };
 
   const result = await processDocumentJobs({}, workerDependencies({
-    claimDocuments: async () => [job, secondJob],
+    claimDocuments: sequentialClaimer([job, secondJob]),
     render: async (document) => {
       if (document.project === "Progetto 21") throw new Error("renderer payload details");
       return Buffer.from("%PDF-test");
@@ -365,7 +396,7 @@ test("content-addressed paths prevent a stale worker from overwriting the winnin
   const staleJob = { ...job, attempts: 2 };
   const currentJob = { ...job, attempts: 3 };
 
-  const staleRun = processDocumentJobs({}, workerDependencies({
+  const staleRun = processDocumentJobs({ batchSize: 1 }, workerDependencies({
     claimDocuments: async () => [staleJob],
     render: async () => Buffer.from("%PDF-stale"),
     upload: async (path, buffer) => {
@@ -381,7 +412,7 @@ test("content-addressed paths prevent a stale worker from overwriting the winnin
   }));
 
   await staleStarted;
-  const currentResult = await processDocumentJobs({}, workerDependencies({
+  const currentResult = await processDocumentJobs({ batchSize: 1 }, workerDependencies({
     claimDocuments: async () => [currentJob],
     render: async () => Buffer.from("%PDF-current"),
     upload: async (path, buffer) => objects.set(path, Buffer.from(buffer)),
@@ -417,7 +448,7 @@ test("reports a safe persistence failure without stopping the remaining batch", 
     requestId: "10000000-0000-4000-8000-000000000002",
   };
   const result = await processDocumentJobs({}, workerDependencies({
-    claimDocuments: async () => [job, secondJob],
+    claimDocuments: sequentialClaimer([job, secondJob]),
     loadSource: async (requestId) => ({
       ...officialSource,
       id: requestId,
@@ -441,6 +472,7 @@ test("reports a safe persistence failure without stopping the remaining batch", 
     phase: "fail_document",
     attempt: 2,
     errorCode: "FAIL_DOCUMENT_JOB_FAILED",
+    durationMs: 0,
   }]);
   assert.equal(JSON.stringify(reports).includes("credentials"), false);
   assert.equal(JSON.stringify(reports).includes("payload"), false);
@@ -615,7 +647,7 @@ test("resolves configured recipients and the exact normalized request subject", 
 
     const result = await processDocumentJobs({}, dependencies);
     const reportDependencies = workerDependencies({
-      claimDocuments: async () => [{ ...job, documentType: "final_report" }],
+      claimDocuments: sequentialClaimer([{ ...job, documentType: "final_report" }]),
       loadSource: async () => ({
         ...officialSource,
         toolLine: "  Tool / Line # 55  ",
@@ -819,7 +851,7 @@ test("sends an already completed PDF without invoking the renderer and completes
   const sendCalls = [];
 
   const result = await processNotificationJobs(
-    { batchSize: 4, leaseSeconds: 120 },
+    { batchSize: 1, leaseSeconds: 120 },
     notificationWorkerDependencies({
       claimNotifications: async (input) => {
         calls.push(["claim", input]);
@@ -856,7 +888,7 @@ test("sends an already completed PDF without invoking the renderer and completes
     "send",
     "complete",
   ]);
-  assert.deepEqual(calls[0][1], { batchSize: 4, leaseSeconds: 120 });
+  assert.deepEqual(calls[0][1], { batchSize: 1, leaseSeconds: 120 });
   assert.equal(sendCalls[0].idempotencyKey, `document-notification/${notificationJob.id}`);
   assert.equal(sendCalls[0].attachment.filename, "fabtek-richiesta-000017.pdf");
   assert.equal(sendCalls[0].attachment.buffer.toString(), "%PDF-email");
@@ -908,7 +940,7 @@ test("continues the notification batch after one email fails", async () => {
   const failures = [];
 
   const result = await processNotificationJobs({}, notificationWorkerDependencies({
-    claimNotifications: async () => [notificationJob, secondJob],
+    claimNotifications: sequentialClaimer([notificationJob, secondJob]),
     loadCompletedDocument: async (documentId) => ({
       ...completedDocument,
       id: documentId,
@@ -927,6 +959,271 @@ test("continues the notification batch after one email fails", async () => {
   assert.equal(failures[0].jobId, notificationJob.id);
   assert.equal(completions[0].jobId, secondJob.id);
   assert.equal(completions[0].attempts, secondJob.attempts);
+});
+
+test("claims document jobs progressively so each lease starts after the prior job completes", async () => {
+  let currentTime = Date.parse("2026-08-28T10:00:00.000Z");
+  const claimTimes = [];
+  const leaseExpirations = [];
+  const calls = [];
+  const secondJob = {
+    ...job,
+    id: "20000000-0000-4000-8000-000000000002",
+    requestId: "10000000-0000-4000-8000-000000000002",
+  };
+  const queuedJobs = [job, secondJob];
+
+  const result = await processDocumentJobs(
+    { batchSize: 3, leaseSeconds: 30 },
+    workerDependencies({
+      claimDocuments: async (input) => {
+        assert.deepEqual(input, { batchSize: 1, leaseSeconds: 30 });
+        calls.push("claim");
+        claimTimes.push(new Date(currentTime).toISOString());
+        const nextJob = queuedJobs.shift();
+        if (!nextJob) return [];
+        leaseExpirations.push(new Date(currentTime + 30_000).toISOString());
+        return [{
+          ...nextJob,
+          leaseExpiresAt: leaseExpirations.at(-1),
+        }];
+      },
+      loadSource: async (requestId, kind) => ({
+        ...officialSource,
+        id: requestId,
+        project: `${kind}-${requestId}`,
+      }),
+      completeDocument: async () => {
+        calls.push("complete");
+        currentTime += 25_000;
+      },
+      now: () => new Date(currentTime),
+    }),
+  );
+
+  assert.deepEqual(result, { claimed: 2, completed: 2, failed: 0 });
+  assert.deepEqual(calls, ["claim", "complete", "claim", "complete", "claim"]);
+  assert.deepEqual(claimTimes, [
+    "2026-08-28T10:00:00.000Z",
+    "2026-08-28T10:00:25.000Z",
+    "2026-08-28T10:00:50.000Z",
+  ]);
+  assert.deepEqual(leaseExpirations, [
+    "2026-08-28T10:00:30.000Z",
+    "2026-08-28T10:00:55.000Z",
+  ]);
+});
+
+test("claims notification jobs progressively so later jobs receive a fresh lease", async () => {
+  let currentTime = Date.parse("2026-08-28T11:00:00.000Z");
+  const claimTimes = [];
+  const leaseExpirations = [];
+  const calls = [];
+  const secondJob = {
+    ...notificationJob,
+    id: "40000000-0000-4000-8000-000000000002",
+    documentId: "50000000-0000-4000-8000-000000000002",
+  };
+  const queuedJobs = [notificationJob, secondJob];
+
+  const result = await processNotificationJobs(
+    { batchSize: 3, leaseSeconds: 30 },
+    notificationWorkerDependencies({
+      claimNotifications: async (input) => {
+        assert.deepEqual(input, { batchSize: 1, leaseSeconds: 30 });
+        calls.push("claim");
+        claimTimes.push(new Date(currentTime).toISOString());
+        const nextJob = queuedJobs.shift();
+        if (!nextJob) return [];
+        leaseExpirations.push(new Date(currentTime + 30_000).toISOString());
+        return [{
+          ...nextJob,
+          leaseExpiresAt: leaseExpirations.at(-1),
+        }];
+      },
+      loadCompletedDocument: async (documentId) => ({
+        ...completedDocument,
+        id: documentId,
+      }),
+      completeNotification: async () => {
+        calls.push("complete");
+        currentTime += 25_000;
+      },
+      now: () => new Date(currentTime),
+    }),
+  );
+
+  assert.deepEqual(result, { claimed: 2, completed: 2, failed: 0 });
+  assert.deepEqual(calls, ["claim", "complete", "claim", "complete", "claim"]);
+  assert.deepEqual(claimTimes, [
+    "2026-08-28T11:00:00.000Z",
+    "2026-08-28T11:00:25.000Z",
+    "2026-08-28T11:00:50.000Z",
+  ]);
+  assert.deepEqual(leaseExpirations, [
+    "2026-08-28T11:00:30.000Z",
+    "2026-08-28T11:00:55.000Z",
+  ]);
+});
+
+test("reports persisted document failures with a sanitized phase and duration", async () => {
+  const reports = [];
+  const clock = [
+    new Date("2026-08-28T12:00:00.000Z"),
+    new Date("2026-08-28T12:00:00.125Z"),
+  ];
+
+  const result = await processDocumentJobs({ batchSize: 1 }, workerDependencies({
+    render: async () => {
+      throw new Error("recipient@example.com requests/private.pdf provider payload");
+    },
+    reportFailure: (event) => reports.push(event),
+    now: () => clock.shift() ?? new Date("2026-08-28T12:00:00.125Z"),
+  }));
+
+  assert.deepEqual(result, { claimed: 1, completed: 0, failed: 1 });
+  assert.deepEqual(reports, [{
+    jobId: JOB_ID,
+    phase: "render",
+    attempt: 2,
+    errorCode: "DOCUMENT_JOB_ERROR",
+    durationMs: 125,
+  }]);
+  const serialized = JSON.stringify(reports);
+  assert.equal(serialized.includes("recipient@example.com"), false);
+  assert.equal(serialized.includes("requests/private.pdf"), false);
+  assert.equal(serialized.includes("provider payload"), false);
+});
+
+test("isolates notification failure reporters after persisting an ordinary failure", async () => {
+  let currentTime = Date.parse("2026-08-28T13:00:00.000Z");
+  const reports = [];
+  const completions = [];
+  const secondJob = {
+    ...notificationJob,
+    id: "40000000-0000-4000-8000-000000000002",
+    documentId: "50000000-0000-4000-8000-000000000002",
+  };
+  const queuedJobs = [notificationJob, secondJob];
+
+  const result = await processNotificationJobs({ batchSize: 3 }, notificationWorkerDependencies({
+    claimNotifications: async () => {
+      const nextJob = queuedJobs.shift();
+      return nextJob ? [nextJob] : [];
+    },
+    loadCompletedDocument: async (documentId) => ({
+      ...completedDocument,
+      id: documentId,
+    }),
+    sendEmail: async (input) => {
+      if (input.idempotencyKey.endsWith(notificationJob.id)) {
+        currentTime += 75;
+        throw new DocumentEmailError();
+      }
+      return { providerMessageId: "provider-message-2" };
+    },
+    completeNotification: async (input) => completions.push(input),
+    reportFailure: (event) => {
+      reports.push(event);
+      throw new Error("reporter unavailable");
+    },
+    now: () => new Date(currentTime),
+  }));
+
+  assert.deepEqual(result, { claimed: 2, completed: 1, failed: 1 });
+  assert.deepEqual(reports, [{
+    jobId: NOTIFICATION_JOB_ID,
+    phase: "send_email",
+    attempt: 2,
+    errorCode: "DOCUMENT_EMAIL_SEND_FAILED",
+    durationMs: 75,
+  }]);
+  assert.equal(completions[0].jobId, secondJob.id);
+});
+
+test("skips fulfillment history for initial PDFs and paginates it for final reports", async () => {
+  const requestRow = {
+    id: REQUEST_ID,
+    request_number: 17,
+    requested_at: "2026-08-28T08:00:00.000Z",
+    project: "Progetto 21",
+    tool_line: "Linea A",
+    utilities: "Aria compressa",
+    notes: null,
+    status: "evasa",
+    requester: { full_name: "Mario Rossi" },
+  };
+  const lineRow = {
+    id: LINE_ID,
+    snapshot_fabtek_code: "FT-001",
+    snapshot_oracle_sapio_code: "OR-900",
+    snapshot_category_name: "Gas",
+    snapshot_family_name: "Flessibili",
+    snapshot_component_name: "Tubo",
+    snapshot_description: "Tubo flessibile PTFE",
+    snapshot_diameter: "DN10",
+    snapshot_material: "PTFE",
+    snapshot_connection: "1/2 NPT",
+    snapshot_unit_of_measure: "m",
+    requested_quantity: 1_001,
+    fulfilled_quantity: 1_001,
+    created_at: "2026-08-28T08:00:00.000Z",
+  };
+  const fulfillmentRows = Array.from({ length: 1_001 }, (_, index) => ({
+    id: `50000000-0000-4000-8000-${(index + 1).toString(16).padStart(12, "0")}`,
+    request_line_id: LINE_ID,
+    quantity: 1,
+    fulfilled_at: new Date(Date.parse("2026-08-28T09:00:00.000Z") + index).toISOString(),
+    notes: null,
+  }));
+
+  function dataDependencies(calls) {
+    return {
+      createClient: () => ({
+        from(table) {
+          calls.tables.push(table);
+          const query = {
+            select() { return this; },
+            eq() { return this; },
+            order() { return this; },
+            async maybeSingle() {
+              return { data: requestRow, error: null };
+            },
+            async range(from, to) {
+              if (table === "material_request_lines") {
+                calls.lineRanges.push([from, to]);
+                return { data: from === 0 ? [lineRow] : [], error: null };
+              }
+              calls.fulfillmentRanges.push([from, to]);
+              return {
+                data: fulfillmentRows.slice(from, to + 1),
+                error: null,
+              };
+            },
+          };
+          return query;
+        },
+      }),
+    };
+  }
+
+  const initialCalls = { tables: [], lineRanges: [], fulfillmentRanges: [] };
+  const initial = await loadOfficialPdfSource(
+    REQUEST_ID,
+    "initial_request",
+    dataDependencies(initialCalls),
+  );
+  assert.equal(initial.lines[0].fulfillments.length, 0);
+  assert.equal(initialCalls.tables.includes("fulfillment_events"), false);
+
+  const finalCalls = { tables: [], lineRanges: [], fulfillmentRanges: [] };
+  const final = await loadOfficialPdfSource(
+    REQUEST_ID,
+    "final_report",
+    dataDependencies(finalCalls),
+  );
+  assert.equal(final.lines[0].fulfillments.length, 1_001);
+  assert.deepEqual(finalCalls.fulfillmentRanges, [[0, 999], [1_000, 1_999]]);
 });
 
 test("claims notification rows with normalized recipients and bounded lease arguments", async () => {

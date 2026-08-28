@@ -703,9 +703,10 @@ export async function getAuthorizedDocument(
 
 export async function loadOfficialPdfSource(
   requestId: string,
+  kind: OfficialDocumentKind,
   dependencies: Partial<DocumentDataDependencies> = {},
 ): Promise<OfficialPdfSource> {
-  if (!UUID_PATTERN.test(requestId)) {
+  if (!UUID_PATTERN.test(requestId) || !DOCUMENT_KINDS.has(kind)) {
     return documentDataError("INVALID_OFFICIAL_SOURCE_RESPONSE");
   }
   const supabase = clientFrom(dependencies);
@@ -719,18 +720,18 @@ export async function loadOfficialPdfSource(
     if (error) return documentDataError("LOAD_OFFICIAL_SOURCE_FAILED");
     if (!request) return documentDataError("DOCUMENT_SOURCE_NOT_FOUND");
 
-    const [lines, fulfillments] = await Promise.all([
-      collectPaginatedRows(async (from, to) => {
-        const response = await supabase
-          .from("material_request_lines")
-          .select(REQUEST_LINE_SELECT)
-          .eq("request_id", requestId)
-          .order("created_at", { ascending: true })
-          .order("id", { ascending: true })
-          .range(from, to);
-        return { data: response.data, error: response.error };
-      }),
-      collectPaginatedRows(async (from, to) => {
+    const linesPromise = collectPaginatedRows(async (from, to) => {
+      const response = await supabase
+        .from("material_request_lines")
+        .select(REQUEST_LINE_SELECT)
+        .eq("request_id", requestId)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to);
+      return { data: response.data, error: response.error };
+    });
+    const fulfillmentsPromise = kind === "final_report"
+      ? collectPaginatedRows(async (from, to) => {
         const response = await supabase
           .from("fulfillment_events")
           .select(FULFILLMENT_SELECT)
@@ -739,7 +740,11 @@ export async function loadOfficialPdfSource(
           .order("id", { ascending: true })
           .range(from, to);
         return { data: response.data, error: response.error };
-      }),
+      })
+      : Promise.resolve([]);
+    const [lines, fulfillments] = await Promise.all([
+      linesPromise,
+      fulfillmentsPromise,
     ]);
 
     return mapOfficialSource(request, lines, fulfillments);
