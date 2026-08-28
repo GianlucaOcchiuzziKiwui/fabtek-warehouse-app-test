@@ -33,15 +33,22 @@ async function extractPdfPages(buffer) {
   });
   const pdf = await loadingTask.promise;
   const pages = await Promise.all(Array.from({ length: pdf.numPages }, async (_, index) => {
-    const content = await (await pdf.getPage(index + 1)).getTextContent();
-    return content.items.map((item) => item.str).join(" ");
+    const page = await pdf.getPage(index + 1);
+    const content = await page.getTextContent();
+    const viewport = page.getViewport({ scale: 1 });
+    const items = content.items.map((item) => ({
+      text: item.str,
+      x: item.transform[4],
+      y: item.transform[5],
+    }));
+    return { height: viewport.height, items, text: items.map((item) => item.text).join(" ") };
   }));
   await loadingTask.destroy();
   return pages;
 }
 
 async function extractPdfText(buffer) {
-  return (await extractPdfPages(buffer)).join("\n");
+  return (await extractPdfPages(buffer)).map((page) => page.text).join("\n");
 }
 
 const line = {
@@ -151,12 +158,20 @@ test("keeps initial request rows complete and final rows with their histories on
     ...common,
     lines: Array.from({ length: 48 }, (_, index) => paginationLine(index + 1)),
   });
-  const initialRowPage = (await extractPdfPages(initialRequest)).find((page) => page.includes("FT-009"));
+  const initialRowPage = (await extractPdfPages(initialRequest)).find((page) => page.text.includes("FT-009"));
 
   assert.ok(initialRowPage);
-  assert.match(initialRowPage, /serie 009/);
-  assert.match(initialRowPage, /OR-909/);
-  assert.match(initialRowPage, /19 m/);
+  assert.match(initialRowPage.text, /serie 009/);
+  assert.match(initialRowPage.text, /OR-909/);
+  assert.match(initialRowPage.text, /19 m/);
+  const footerTop = Math.min(...initialRowPage.items
+    .filter((item) => item.text.includes("Fabtek"))
+    .map((item) => item.y));
+  for (const rowText of ["FT-009", "serie 009", "OR-909", "19 m"]) {
+    const item = initialRowPage.items.find((candidate) => candidate.text.includes(rowText));
+    assert.ok(item);
+    assert.ok(item.y > footerTop + 8, `${rowText} must stay above the footer`);
+  }
 
   const finalReport = await renderPdfDocument({
     kind: "final_report",
@@ -176,9 +191,36 @@ test("keeps initial request rows complete and final rows with their histories on
       };
     }),
   });
-  const finalRowPage = (await extractPdfPages(finalReport)).find((page) => page.includes("FT-006"));
+  const finalRowPage = (await extractPdfPages(finalReport)).find((page) => page.text.includes("FT-006"));
 
   assert.ok(finalRowPage);
-  assert.match(finalRowPage, /Prima consegna FT-006/);
-  assert.match(finalRowPage, /Consegna completa FT-006/);
+  assert.match(finalRowPage.text, /Prima consegna FT-006/);
+  assert.match(finalRowPage.text, /Consegna completa FT-006/);
+});
+
+test("keeps the first history entry with a four-entry final material row", async () => {
+  const finalReport = await renderPdfDocument({
+    kind: "final_report",
+    requestNumber: 17,
+    statusLabel: "Evasa",
+    ...common,
+    lines: Array.from({ length: 30 }, (_, index) => {
+      const number = String(index + 1).padStart(3, "0");
+      const material = { ...paginationLine(index + 1), fabtekCode: `MAT-${number}` };
+      return {
+        ...material,
+        fulfilledQuantity: material.requestedQuantity,
+        remainingQuantity: 0,
+        fulfillments: Array.from({ length: 4 }, (_, fulfillmentIndex) => ({
+          quantity: 1,
+          fulfilledAtLabel: `28/08/2026 ${fulfillmentIndex + 1}:00`,
+          notes: `MAT-${number}-H${fulfillmentIndex + 1}`,
+        })),
+      };
+    }),
+  });
+  const materialPage = (await extractPdfPages(finalReport)).find((page) => page.text.includes("MAT-016"));
+
+  assert.ok(materialPage);
+  assert.match(materialPage.text, /MAT-016-H1/);
 });

@@ -75,8 +75,16 @@ function InitialLine({ line }: { line: PdfLine }) {
   </View>;
 }
 
+function HistoryEntry({ line, fulfillment, isFirst }: { line: PdfLine; fulfillment: NonNullable<PdfLine["fulfillments"]>[number]; isFirst: boolean }) {
+  return <View style={styles.history}>
+    <Text>{isFirst ? "Storico: " : ""}{fulfillment.fulfilledAtLabel}: {fulfillment.quantity} {line.unitOfMeasure}{fulfillment.notes ? ` — ${fulfillment.notes}` : ""}</Text>
+  </View>;
+}
+
 function FinalLine({ line }: { line: PdfLine }) {
-  const content = <>
+  const fulfillments = line.fulfillments ?? [];
+  return <>
+    <View wrap={false}>
     <View style={styles.tableRow} wrap={false}>
       <Text style={[styles.compactCell, styles.finalCode]}>{line.fabtekCode}</Text>
       <Text style={[styles.compactCell, styles.finalDescription]}>{lineDescription(line)}</Text>
@@ -85,12 +93,10 @@ function FinalLine({ line }: { line: PdfLine }) {
       <Text style={[styles.compactCell, styles.finalQuantity]}>{line.fulfilledQuantity ?? 0} {line.unitOfMeasure}</Text>
       <Text style={[styles.compactCell, styles.finalLastQuantity]}>{line.remainingQuantity ?? line.requestedQuantity} {line.unitOfMeasure}</Text>
     </View>
-    {line.fulfillments?.length ? line.fulfillments.map((fulfillment, index) => <View key={`${fulfillment.fulfilledAtLabel}-${index}`} style={styles.history}>
-      <Text>{index === 0 ? "Storico: " : ""}{fulfillment.fulfilledAtLabel}: {fulfillment.quantity} {line.unitOfMeasure}{fulfillment.notes ? ` — ${fulfillment.notes}` : ""}</Text>
-    </View>) : <View style={styles.history}><Text>Storico: Nessuna evasione registrata</Text></View>}
+      {fulfillments[0] ? <HistoryEntry line={line} fulfillment={fulfillments[0]} isFirst /> : <View style={styles.history}><Text>Storico: Nessuna evasione registrata</Text></View>}
+    </View>
+    {fulfillments.slice(1).map((fulfillment, index) => <HistoryEntry key={`${fulfillment.fulfilledAtLabel}-${index + 1}`} line={line} fulfillment={fulfillment} isFirst={false} />)}
   </>;
-
-  return (line.fulfillments?.length ?? 0) <= 3 ? <View wrap={false}>{content}</View> : content;
 }
 
 function MaterialTable({ document }: { document: PdfDocument }) {
