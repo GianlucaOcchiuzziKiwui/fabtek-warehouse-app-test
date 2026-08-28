@@ -13,7 +13,7 @@ test("catalog-picker quantity errors are programmatically associated with their 
   const source = await readFile("components/requests/add-to-request-button.tsx", "utf8");
 
   assert.match(source, /aria-describedby=\{showQuantityError \? quantityErrorId : undefined\}/u);
-  assert.match(source, /<p id=\{quantityErrorId\}/u);
+  assert.match(source, /<p\s+[^>]*\bid=\{quantityErrorId\}/u);
 });
 
 test("request retries expose the locked original payload and retry guidance", async () => {

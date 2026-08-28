@@ -485,7 +485,7 @@ export function canonicalizeCatalogFilters(
 
 export function getAvailabilityLabel(stock: StockView): AvailabilityLabel {
   if (!stock.trackInventory || stock.status === "unlimited") {
-    return { label: "Disponibile ", tone: "good" };
+    return { label: "Disponibilità non limitata", tone: "neutral" };
   }
 
   if (stock.status === "out_of_stock") {
