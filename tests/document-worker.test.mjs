@@ -41,6 +41,9 @@ const { processDocumentJobs } = await import("../lib/domain/documents/worker.ts"
 const REQUEST_ID = "10000000-0000-4000-8000-000000000001";
 const JOB_ID = "20000000-0000-4000-8000-000000000001";
 const LINE_ID = "30000000-0000-4000-8000-000000000001";
+const TEST_PDF_SHA256 = "3c87d37f1dbea6909f917ce437c390fb8e655a774387d9e69301c0b2283d5b63";
+const STALE_PDF_SHA256 = "55899375fbc45517a38325d486737f3afb61ababaf25192b480d61129fb07798";
+const CURRENT_PDF_SHA256 = "542be9e38348b0a9026ec6476c9860d2b94ffe8e69abe362f464acd49ecccbd0";
 
 const job = {
   id: JOB_ID,
@@ -139,12 +142,18 @@ test("processes an official request in order with deterministic storage metadata
   assert.deepEqual(calls[0][1], { batchSize: 5, leaseSeconds: 300 });
   assert.equal(calls[2][1].lines[0].requestedQuantity, 10);
   assert.equal("fulfilledQuantity" in calls[2][1].lines[0], false);
-  assert.equal(calls[3][1].path, `requests/${REQUEST_ID}/initial-request-v1.pdf`);
+  assert.equal(
+    calls[3][1].path,
+    `requests/${REQUEST_ID}/initial-request-v1-${TEST_PDF_SHA256}.pdf`,
+  );
   assert.equal(calls[3][1].buffer.toString(), "%PDF-test");
   assert.equal(calls[5][1].jobId, JOB_ID);
   assert.equal(calls[5][1].attempts, 2);
-  assert.equal(calls[5][1].storagePath, `requests/${REQUEST_ID}/initial-request-v1.pdf`);
-  assert.match(calls[5][1].sha256, /^[0-9a-f]{64}$/u);
+  assert.equal(
+    calls[5][1].storagePath,
+    `requests/${REQUEST_ID}/initial-request-v1-${TEST_PDF_SHA256}.pdf`,
+  );
+  assert.equal(calls[5][1].sha256, TEST_PDF_SHA256);
   assert.deepEqual(calls[5][1].recipients, ["magazzino@example.com"]);
 });
 
@@ -244,8 +253,8 @@ test("reuses the same storage path when atomic completion fails after upload", a
   assert.deepEqual(first, { claimed: 1, completed: 0, failed: 1 });
   assert.deepEqual(second, { claimed: 1, completed: 1, failed: 0 });
   assert.deepEqual(uploads, [
-    `requests/${REQUEST_ID}/initial-request-v1.pdf`,
-    `requests/${REQUEST_ID}/initial-request-v1.pdf`,
+    `requests/${REQUEST_ID}/initial-request-v1-${TEST_PDF_SHA256}.pdf`,
+    `requests/${REQUEST_ID}/initial-request-v1-${TEST_PDF_SHA256}.pdf`,
   ]);
   assert.equal(failures[0].attempts, 2);
 });
@@ -277,6 +286,118 @@ test("rejects incomplete official snapshots and inconsistent final fulfillment t
     (error) => error instanceof OfficialPdfMappingError
       && error.code === "INVALID_FINAL_REPORT_QUANTITIES",
   );
+});
+
+test("rejects a final report while any requested quantity remains unfulfilled", () => {
+  assert.throws(
+    () => mapOfficialPdfDocument({
+      ...officialSource,
+      status: "evasa",
+      lines: [{
+        ...officialSource.lines[0],
+        fulfilledQuantity: 9,
+        fulfillments: [{
+          id: "50000000-0000-4000-8000-000000000001",
+          quantity: 9,
+          fulfilledAt: "2026-08-28T09:00:00.000Z",
+          notes: null,
+        }],
+      }],
+    }, "final_report"),
+    (error) => error instanceof OfficialPdfMappingError
+      && error.code === "INVALID_FINAL_REPORT_QUANTITIES",
+  );
+});
+
+test("content-addressed paths prevent a stale worker from overwriting the winning PDF", async () => {
+  const objects = new Map();
+  const winnerCompletions = [];
+  let releaseStaleUpload;
+  let staleUploadStarted;
+  const staleUploadGate = new Promise((resolve) => { releaseStaleUpload = resolve; });
+  const staleStarted = new Promise((resolve) => { staleUploadStarted = resolve; });
+  const staleJob = { ...job, attempts: 2 };
+  const currentJob = { ...job, attempts: 3 };
+
+  const staleRun = processDocumentJobs({}, workerDependencies({
+    claimDocuments: async () => [staleJob],
+    render: async () => Buffer.from("%PDF-stale"),
+    upload: async (path, buffer) => {
+      staleUploadStarted();
+      await staleUploadGate;
+      objects.set(path, Buffer.from(buffer));
+    },
+    completeDocument: async () => {
+      throw Object.assign(new Error("stale lease"), {
+        code: "DOCUMENT_JOB_LEASE_LOST",
+      });
+    },
+  }));
+
+  await staleStarted;
+  const currentResult = await processDocumentJobs({}, workerDependencies({
+    claimDocuments: async () => [currentJob],
+    render: async () => Buffer.from("%PDF-current"),
+    upload: async (path, buffer) => objects.set(path, Buffer.from(buffer)),
+    completeDocument: async (input) => winnerCompletions.push(input),
+  }));
+  releaseStaleUpload();
+  const staleResult = await staleRun;
+
+  const winner = winnerCompletions[0];
+  assert.deepEqual(currentResult, { claimed: 1, completed: 1, failed: 0 });
+  assert.deepEqual(staleResult, { claimed: 1, completed: 0, failed: 1 });
+  assert.equal(objects.size, 2);
+  assert.equal(winner.attempts, 3);
+  assert.equal(winner.sha256, CURRENT_PDF_SHA256);
+  assert.equal(
+    winner.storagePath,
+    `requests/${REQUEST_ID}/initial-request-v1-${CURRENT_PDF_SHA256}.pdf`,
+  );
+  assert.equal(objects.get(winner.storagePath).toString(), "%PDF-current");
+  assert.equal(
+    objects
+      .get(`requests/${REQUEST_ID}/initial-request-v1-${STALE_PDF_SHA256}.pdf`)
+      .toString(),
+    "%PDF-stale",
+  );
+});
+
+test("reports a safe persistence failure without stopping the remaining batch", async () => {
+  const reports = [];
+  const secondJob = {
+    ...job,
+    id: "20000000-0000-4000-8000-000000000002",
+    requestId: "10000000-0000-4000-8000-000000000002",
+  };
+  const result = await processDocumentJobs({}, workerDependencies({
+    claimDocuments: async () => [job, secondJob],
+    loadSource: async (requestId) => ({
+      ...officialSource,
+      id: requestId,
+      project: requestId === REQUEST_ID ? "Render failure" : "Valid job",
+    }),
+    render: async (document) => {
+      if (document.project === "Render failure") throw new Error("render payload");
+      return Buffer.from("%PDF-test");
+    },
+    failDocument: async () => {
+      throw Object.assign(new Error("database credentials"), {
+        code: "FAIL_DOCUMENT_JOB_FAILED",
+      });
+    },
+    reportFailure: (event) => reports.push(event),
+  }));
+
+  assert.deepEqual(result, { claimed: 2, completed: 1, failed: 1 });
+  assert.deepEqual(reports, [{
+    jobId: JOB_ID,
+    phase: "fail_document",
+    attempt: 2,
+    errorCode: "FAIL_DOCUMENT_JOB_FAILED",
+  }]);
+  assert.equal(JSON.stringify(reports).includes("credentials"), false);
+  assert.equal(JSON.stringify(reports).includes("payload"), false);
 });
 
 test("reads document configuration lazily, normalizes recipients and rejects unsafe values", () => {
@@ -424,7 +545,7 @@ test("rejects a non-HTTP Supabase URL before constructing a service-role client"
   }
 });
 
-test("resolves configured recipients and a normalized subject before atomic completion", async () => {
+test("resolves configured recipients and the exact normalized request subject", async () => {
   const previous = {
     apiKey: process.env.RESEND_API_KEY,
     from: process.env.EMAIL_FROM,
@@ -438,19 +559,49 @@ test("resolves configured recipients and a normalized subject before atomic comp
     const dependencies = workerDependencies({
       loadSource: async () => ({
         ...officialSource,
-        project: "  Progetto\n 21  ",
+        toolLine: "  Tool / Line # 55  ",
+        utilities: " Aria\n  compressa ",
+        requesterName: " Mário   Rossi ",
       }),
       completeDocument: async (input) => completions.push(input),
     });
     delete dependencies.resolveNotification;
 
     const result = await processDocumentJobs({}, dependencies);
+    const reportDependencies = workerDependencies({
+      claimDocuments: async () => [{ ...job, documentType: "final_report" }],
+      loadSource: async () => ({
+        ...officialSource,
+        toolLine: "  Tool / Line # 55  ",
+        utilities: " Aria\n  compressa ",
+        requesterName: " Mário   Rossi ",
+        status: "evasa",
+        lines: [{
+          ...officialSource.lines[0],
+          fulfilledQuantity: 10,
+          fulfillments: [{
+            id: "50000000-0000-4000-8000-000000000001",
+            quantity: 10,
+            fulfilledAt: "2026-08-28T09:00:00.000Z",
+            notes: null,
+          }],
+        }],
+      }),
+      completeDocument: async (input) => completions.push(input),
+    });
+    delete reportDependencies.resolveNotification;
+    const reportResult = await processDocumentJobs({}, reportDependencies);
 
     assert.deepEqual(result, { claimed: 1, completed: 1, failed: 0 });
+    assert.deepEqual(reportResult, { claimed: 1, completed: 1, failed: 0 });
     assert.deepEqual(completions[0].recipients, ["warehouse@example.com"]);
     assert.equal(
       completions[0].subject,
-      "Richiesta materiale #000017 - Progetto 21",
+      "CMKT_RDM_Tool / Line # 55_Aria compressa_Mário Rossi_17",
+    );
+    assert.equal(
+      completions[1].subject,
+      "CMKT_RDM_Tool / Line # 55_Aria compressa_Mário Rossi_17_EVASA",
     );
   } finally {
     if (previous.apiKey === undefined) delete process.env.RESEND_API_KEY;
@@ -484,7 +635,7 @@ test("keeps an uploaded document retryable when email configuration is missing",
 
     assert.deepEqual(result, { claimed: 1, completed: 0, failed: 1 });
     assert.deepEqual(uploads, [
-      `requests/${REQUEST_ID}/initial-request-v1.pdf`,
+      `requests/${REQUEST_ID}/initial-request-v1-${TEST_PDF_SHA256}.pdf`,
     ]);
     assert.equal(failures[0].error, "MISSING_DOCUMENT_ENV");
     assert.equal(failures[0].attempts, 2);

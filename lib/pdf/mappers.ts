@@ -163,7 +163,7 @@ function mapOfficialLine(
   if (
     !Number.isSafeInteger(line.fulfilledQuantity)
     || line.fulfilledQuantity < 0
-    || line.fulfilledQuantity > line.requestedQuantity
+    || line.fulfilledQuantity !== line.requestedQuantity
     || !Array.isArray(line.fulfillments)
   ) {
     return mappingError("INVALID_FINAL_REPORT_QUANTITIES");

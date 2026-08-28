@@ -36,6 +36,13 @@ export type NotificationDetails = {
   subject: string;
 };
 
+export type DocumentWorkerFailureEvent = {
+  jobId: string;
+  phase: "fail_document";
+  attempt: number;
+  errorCode: string;
+};
+
 export type DocumentWorkerDependencies = {
   claimDocuments: (input: ClaimDocumentJobsInput) => Promise<ClaimedDocumentJob[]>;
   loadSource: (requestId: string) => Promise<OfficialPdfSource>;
@@ -47,6 +54,7 @@ export type DocumentWorkerDependencies = {
   ) => NotificationDetails;
   completeDocument: (input: CompleteDocumentJobInput) => Promise<void>;
   failDocument: (input: FailDocumentJobInput) => Promise<void>;
+  reportFailure: (event: DocumentWorkerFailureEvent) => void;
   now: () => Date;
 };
 
@@ -108,26 +116,35 @@ function defaultNotification(
   kind: OfficialDocumentKind,
 ): NotificationDetails {
   const { recipients } = getEmailConfig();
-  const requestNumber = String(source.requestNumber).padStart(6, "0");
-  const project = source.project.replace(/\s+/gu, " ").trim();
-  const prefix = kind === "initial_request"
-    ? "Richiesta materiale"
-    : "Report finale richiesta";
+  const normalizeSubjectValue = (value: string) => value
+    .normalize("NFKC")
+    .replace(/[\p{Cc}\p{Cf}]+/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
+  const toolLine = normalizeSubjectValue(source.toolLine);
+  const utilities = normalizeSubjectValue(source.utilities);
+  const requesterName = normalizeSubjectValue(source.requesterName);
+  if (!toolLine || !utilities || !requesterName) {
+    throw Object.assign(new Error("Oggetto notifica non valido."), {
+      code: "INVALID_NOTIFICATION_SUBJECT",
+    });
+  }
+  const suffix = kind === "final_report" ? "_EVASA" : "";
   return {
     recipients,
-    subject: `${prefix} #${requestNumber} - ${project}`.slice(0, 240),
+    subject: `CMKT_RDM_${toolLine}_${utilities}_${requesterName}_${source.requestNumber}${suffix}`,
   };
 }
 
-function storagePath(job: ClaimedDocumentJob) {
+function storagePath(job: ClaimedDocumentJob, sha256: string) {
   if (!TEMPLATE_VERSION_PATTERN.test(job.templateVersion)) {
     throw Object.assign(new Error("Versione template non valida."), {
       code: "INVALID_TEMPLATE_VERSION",
     });
   }
   const filename = job.documentType === "initial_request"
-    ? `initial-request-v${job.templateVersion}.pdf`
-    : `final-report-v${job.templateVersion}.pdf`;
+    ? `initial-request-v${job.templateVersion}-${sha256}.pdf`
+    : `final-report-v${job.templateVersion}-${sha256}.pdf`;
   return `requests/${job.requestId}/${filename}`;
 }
 
@@ -155,6 +172,9 @@ function buildDependencies(
     resolveNotification: defaultNotification,
     completeDocument: completeGeneratedDocumentJob,
     failDocument: failGeneratedDocumentJob,
+    reportFailure: (event) => {
+      console.error("Document worker failure persistence failed", event);
+    },
     now: () => new Date(),
     ...overrides,
   };
@@ -184,8 +204,8 @@ export async function processDocumentJobs(
         });
       }
 
-      const path = storagePath(job);
       const sha256 = createHash("sha256").update(buffer).digest("hex");
+      const path = storagePath(job, sha256);
       await resolvedDependencies.upload(path, buffer);
       const notification = resolvedDependencies.resolveNotification(
         source,
@@ -212,9 +232,17 @@ export async function processDocumentJobs(
           retryAt: retry.retryAt,
           terminal: retry.terminal,
         });
-      } catch {
-        // The lease may have expired or infrastructure may still be unavailable.
-        // The database claim path recovers expired processing jobs safely.
+      } catch (failureError) {
+        try {
+          resolvedDependencies.reportFailure({
+            jobId: job.id,
+            phase: "fail_document",
+            attempt: job.attempts,
+            errorCode: errorCode(failureError),
+          });
+        } catch {
+          // Reporting must not stop other leased jobs in the same batch.
+        }
       }
     }
   }
