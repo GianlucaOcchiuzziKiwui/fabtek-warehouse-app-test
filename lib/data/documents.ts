@@ -33,6 +33,11 @@ export type CompletedGeneratedDocument = {
   storagePath: string;
 };
 
+export type DownloadableDocument = {
+  buffer: Buffer;
+  filename: string;
+};
+
 export type OfficialPdfFulfillmentSource = {
   id: string;
   quantity: number;
@@ -118,6 +123,8 @@ export type DocumentDataErrorCode =
   | "INVALID_COMPLETED_DOCUMENT_RESPONSE"
   | "DOWNLOAD_GENERATED_PDF_FAILED"
   | "INVALID_GENERATED_PDF"
+  | "LOAD_AUTHORIZED_DOCUMENT_FAILED"
+  | "DOWNLOAD_AUTHORIZED_DOCUMENT_FAILED"
   | "COMPLETE_NOTIFICATION_JOB_FAILED"
   | "FAIL_NOTIFICATION_JOB_FAILED"
   | "NOTIFICATION_JOB_LEASE_LOST";
@@ -133,8 +140,14 @@ export class DocumentDataError extends Error {
 }
 
 type AdminClient = ReturnType<typeof createAdminClient>;
+type SessionClient = Awaited<ReturnType<
+  typeof import("../supabase/server.ts").createClient
+>>;
 type DocumentDataDependencies = {
   createClient: () => AdminClient;
+};
+type AuthorizedDocumentDependencies = {
+  createClient: () => SessionClient | Promise<SessionClient>;
 };
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
@@ -224,12 +237,25 @@ function timestamp(value: unknown): string | null {
   return normalized;
 }
 
+function errorStatus(value: unknown): number | null {
+  if (!isRecord(value)) return null;
+  const status = value.statusCode ?? value.status;
+  if (typeof status === "number" && Number.isInteger(status)) return status;
+  if (typeof status !== "string" || !/^\d{3}$/u.test(status)) return null;
+  return Number(status);
+}
+
 function documentDataError(code: DocumentDataErrorCode): never {
   throw new DocumentDataError(code);
 }
 
 function clientFrom(dependencies: Partial<DocumentDataDependencies>) {
   return (dependencies.createClient ?? createAdminClient)();
+}
+
+async function createSessionClient() {
+  const { createClient } = await import("../supabase/server.ts");
+  return createClient();
 }
 
 function mapClaimedJob(value: unknown): ClaimedDocumentJob {
@@ -365,6 +391,16 @@ function mapCompletedDocument(value: unknown): CompletedGeneratedDocument {
     requestNumber,
     storagePath,
   };
+}
+
+function officialDocumentFilename(
+  kind: OfficialDocumentKind,
+  requestNumber: number,
+) {
+  const number = String(requestNumber).padStart(6, "0");
+  return kind === "initial_request"
+    ? `fabtek-richiesta-${number}.pdf`
+    : `fabtek-report-finale-${number}.pdf`;
 }
 
 function mapFulfillment(value: unknown): OfficialPdfFulfillmentSource & {
@@ -605,6 +641,57 @@ export async function downloadGeneratedPdf(
   } catch (error) {
     if (error instanceof DocumentDataError) throw error;
     return documentDataError("DOWNLOAD_GENERATED_PDF_FAILED");
+  }
+}
+
+export async function getAuthorizedDocument(
+  documentId: string,
+  dependencies: Partial<AuthorizedDocumentDependencies> = {},
+): Promise<DownloadableDocument | null> {
+  if (!UUID_PATTERN.test(documentId)) return null;
+
+  const createClient = dependencies.createClient ?? createSessionClient;
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("generated_documents")
+      .select(`
+        id,
+        request_id,
+        document_type,
+        status,
+        storage_path,
+        request:material_requests!inner(request_number)
+      `)
+      .eq("id", documentId)
+      .eq("status", "completed")
+      .maybeSingle();
+    if (error) return documentDataError("LOAD_AUTHORIZED_DOCUMENT_FAILED");
+    if (!data) return null;
+    if (!isRecord(data) || data.status !== "completed") return null;
+
+    const metadata = mapCompletedDocument(data);
+    const { data: file, error: downloadError } = await supabase.storage
+      .from(GENERATED_DOCUMENTS_BUCKET)
+      .download(metadata.storagePath);
+    if (downloadError) {
+      if (errorStatus(downloadError) === 404) return null;
+      return documentDataError("DOWNLOAD_AUTHORIZED_DOCUMENT_FAILED");
+    }
+    if (!file) return null;
+
+    const buffer = Buffer.from(await file.arrayBuffer());
+    if (buffer.length === 0) return null;
+    return {
+      buffer,
+      filename: officialDocumentFilename(
+        metadata.documentType,
+        metadata.requestNumber,
+      ),
+    };
+  } catch (error) {
+    if (error instanceof DocumentDataError) throw error;
+    return documentDataError("LOAD_AUTHORIZED_DOCUMENT_FAILED");
   }
 }
 

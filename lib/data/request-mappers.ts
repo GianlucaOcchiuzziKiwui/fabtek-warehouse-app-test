@@ -49,6 +49,15 @@ export type RequestLineDetail = {
   fulfillments: FulfillmentHistoryItem[];
 };
 
+export type RequestDocumentView = {
+  id: string;
+  kind: "initial_request" | "final_report";
+  label: "Richiesta ufficiale" | "Report finale";
+  status: "pending" | "processing" | "completed" | "failed";
+  completedAtLabel: string | null;
+  canDownload: boolean;
+};
+
 export type RequestDetail = {
   id: string;
   requestNumber: number;
@@ -59,6 +68,7 @@ export type RequestDetail = {
   utilities: string;
   notes: string | null;
   status: RequestStatusView;
+  documents: RequestDocumentView[];
   lines: RequestLineDetail[];
 };
 
@@ -200,6 +210,44 @@ function mapFulfillment(value: unknown): FulfillmentHistoryItem {
   };
 }
 
+function mapRequestDocument(value: unknown): RequestDocumentView {
+  if (!isRecord(value)) return mappingError("Documento richiesta non valido.");
+
+  const id = text(value.id);
+  const kind = text(value.document_type);
+  const status = text(value.status);
+  if (
+    !id
+    || (kind !== "initial_request" && kind !== "final_report")
+    || (
+      status !== "pending"
+      && status !== "processing"
+      && status !== "completed"
+      && status !== "failed"
+    )
+  ) {
+    return mappingError("Documento richiesta non valido.");
+  }
+
+  const completedAt = value.completed_at === null ? null : text(value.completed_at);
+  if (
+    (status === "completed" && !completedAt)
+    || (status !== "completed" && completedAt !== null)
+    || (completedAt && Number.isNaN(new Date(completedAt).getTime()))
+  ) {
+    return mappingError("Documento richiesta non valido.");
+  }
+
+  return {
+    id,
+    kind,
+    label: kind === "initial_request" ? "Richiesta ufficiale" : "Report finale",
+    status,
+    completedAtLabel: completedAt ? formatRequestTimestamp(completedAt) : null,
+    canDownload: status === "completed",
+  };
+}
+
 type MappedRequestLine = {
   data: RequestLineDetail;
   createdAt: string;
@@ -335,6 +383,9 @@ export function mapRequestDetail(value: unknown): RequestDetail {
   if (!Array.isArray(value.lines)) {
     return mappingError("Relazione righe richiesta non valida.");
   }
+  if (!Array.isArray(value.documents)) {
+    return mappingError("Relazione documenti richiesta non valida.");
+  }
 
   const lines = value.lines
     .map(mapRequestLine)
@@ -343,6 +394,10 @@ export function mapRequestDetail(value: unknown): RequestDetail {
       || left.data.id.localeCompare(right.data.id)
     ))
     .map((line) => line.data);
+  const documentOrder = { initial_request: 0, final_report: 1 } as const;
+  const documents = value.documents
+    .map(mapRequestDocument)
+    .sort((left, right) => documentOrder[left.kind] - documentOrder[right.kind]);
 
   return {
     id,
@@ -354,6 +409,7 @@ export function mapRequestDetail(value: unknown): RequestDetail {
     utilities,
     notes: text(value.notes),
     status: mapRequestStatus(value.status),
+    documents,
     lines,
   };
 }
