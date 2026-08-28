@@ -239,10 +239,16 @@ function timestamp(value: unknown): string | null {
 
 function errorStatus(value: unknown): number | null {
   if (!isRecord(value)) return null;
-  const status = value.statusCode ?? value.status;
-  if (typeof status === "number" && Number.isInteger(status)) return status;
-  if (typeof status !== "string" || !/^\d{3}$/u.test(status)) return null;
-  return Number(status);
+  if (typeof value.status === "number" && Number.isInteger(value.status)) {
+    return value.status;
+  }
+  if (typeof value.statusCode === "number" && Number.isInteger(value.statusCode)) {
+    return value.statusCode;
+  }
+  if (typeof value.statusCode === "string" && /^\d{3}$/u.test(value.statusCode)) {
+    return Number(value.statusCode);
+  }
+  return null;
 }
 
 function documentDataError(code: DocumentDataErrorCode): never {

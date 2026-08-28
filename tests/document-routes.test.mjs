@@ -136,13 +136,44 @@ test("authorized document download hides RLS-invisible, pending, and missing fil
     status: "completed",
     storage_path: STORAGE_PATH,
     request: { request_number: 17 },
-  }, { data: null, error: { statusCode: "404" } });
+  }, { data: null, error: { status: 404, statusCode: "NoSuchKey" } });
   assert.equal(await documentsModule.getAuthorizedDocument(DOCUMENT_ID, {
     createClient: async () => missingFile.client,
   }), null);
 });
 
-test("authorized document download preserves infrastructure failures as safe data errors", async () => {
+test("official document route returns 404 for a realistic missing Storage object", async () => {
+  const route = await import("../app/api/documents/[documentId]/route.ts");
+  const missingFile = authorizedDocumentClient({
+    id: DOCUMENT_ID,
+    request_id: REQUEST_ID,
+    document_type: "initial_request",
+    status: "completed",
+    storage_path: STORAGE_PATH,
+    request: { request_number: 17 },
+  }, { data: null, error: { status: 404, statusCode: "NoSuchKey" } });
+  const handler = route.createDocumentDownloadHandler({
+    getProfile: async () => ({
+      id: "30000000-0000-4000-8000-000000000001",
+      full_name: "Mario Rossi",
+      role: "user",
+      is_active: true,
+    }),
+    getDocument: (documentId) => documentsModule.getAuthorizedDocument(documentId, {
+      createClient: async () => missingFile.client,
+    }),
+    reportFailure: () => {},
+  });
+
+  const response = await handler(new Request("http://localhost"), {
+    params: Promise.resolve({ documentId: DOCUMENT_ID }),
+  });
+
+  assert.equal(response.status, 404);
+  assert.deepEqual(await response.json(), { error: "Documento non trovato." });
+});
+
+test("authorized document download preserves infrastructure failures as safe repository and route errors", async () => {
   const unavailableStorage = authorizedDocumentClient({
     id: DOCUMENT_ID,
     request_id: REQUEST_ID,
@@ -150,7 +181,7 @@ test("authorized document download preserves infrastructure failures as safe dat
     status: "completed",
     storage_path: STORAGE_PATH,
     request: { request_number: 17 },
-  }, { data: null, error: { statusCode: "503" } });
+  }, { data: null, error: { status: 503, statusCode: "InternalError" } });
 
   await assert.rejects(
     documentsModule.getAuthorizedDocument(DOCUMENT_ID, {
@@ -158,6 +189,33 @@ test("authorized document download preserves infrastructure failures as safe dat
     }),
     (error) => error?.code === "DOWNLOAD_AUTHORIZED_DOCUMENT_FAILED",
   );
+
+  const route = await import("../app/api/documents/[documentId]/route.ts");
+  const reports = [];
+  const handler = route.createDocumentDownloadHandler({
+    getProfile: async () => ({
+      id: "30000000-0000-4000-8000-000000000001",
+      full_name: "Mario Rossi",
+      role: "user",
+      is_active: true,
+    }),
+    getDocument: (documentId) => documentsModule.getAuthorizedDocument(documentId, {
+      createClient: async () => unavailableStorage.client,
+    }),
+    reportFailure: (event) => reports.push(event),
+  });
+  const response = await handler(new Request("http://localhost"), {
+    params: Promise.resolve({ documentId: DOCUMENT_ID }),
+  });
+
+  assert.equal(response.status, 500);
+  assert.deepEqual(await response.json(), {
+    error: "Il documento non è disponibile in questo momento.",
+  });
+  assert.deepEqual(reports, [{
+    operation: "download official document",
+    errorCode: "DOWNLOAD_AUTHORIZED_DOCUMENT_FAILED",
+  }]);
 });
 
 test("official document route enforces profile state and returns a private PDF download", async () => {
