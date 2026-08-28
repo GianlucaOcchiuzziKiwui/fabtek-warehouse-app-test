@@ -11,7 +11,10 @@ import type {
   CatalogSearchResult,
   CatalogVariant,
 } from "@/lib/data/catalog";
-import { REQUEST_MATERIALS_PATH } from "@/lib/domain/requests/navigation";
+import {
+  buildRequestHeaderHref,
+  REQUEST_MATERIALS_PATH,
+} from "@/lib/domain/requests/navigation";
 import { ArrowLeft, ArrowRight, BadgeCheck } from "lucide-react";
 import Link from "next/link";
 
@@ -49,12 +52,12 @@ function RequestItemTable({
         <tbody>
           {variants.map((variant) => (
             <tr key={`${variant.id}:${selectedCategoryId ?? "all"}`} className="border-b border-border last:border-b-0 even:bg-muted/45">
-              <td className="px-3 py-3 align-top font-mono font-semibold" title={variant.description}>{variant.fabtekCode}</td>
-              <td className="px-3 py-3 align-top">{variant.diameter || "—"}</td>
-              <td className="px-3 py-3 align-top">{variant.material || "—"}</td>
-              <td className="px-3 py-3 align-top">{variant.connection || "—"}</td>
-              <td className="px-3 py-3 align-top"><AvailabilityBadge stock={variant.stock} /></td>
-              <td colSpan={2} className="px-3 py-3 align-top">
+              <td className="px-3 py-3 align-middle font-mono font-semibold" title={variant.description}>{variant.fabtekCode}</td>
+              <td className="px-3 py-3 align-middle">{variant.diameter || "—"}</td>
+              <td className="px-3 py-3 align-middle">{variant.material || "—"}</td>
+              <td className="px-3 py-3 align-middle">{variant.connection || "—"}</td>
+              <td className="px-3 py-3 align-middle"><AvailabilityBadge stock={variant.stock} /></td>
+              <td colSpan={2} className="px-3 py-3 align-middle">
                 <RequestItemRowControls
                   itemVariantId={variant.id}
                   categories={variant.categories}
@@ -156,6 +159,14 @@ export function RequestCatalogPicker({
 
       <CatalogNavigation
         basePath={REQUEST_MATERIALS_PATH}
+        rootBackHref={buildRequestHeaderHref(
+          selectedVariant && selectedCategoryId
+            ? {
+                variantId: selectedVariant.id,
+                categoryId: selectedCategoryId,
+              }
+            : undefined,
+        )}
         filters={filters}
         options={options}
         searchMatches={searchMatches}

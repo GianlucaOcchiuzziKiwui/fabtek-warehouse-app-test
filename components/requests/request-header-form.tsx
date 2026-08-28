@@ -58,7 +58,7 @@ export function RequestHeaderForm({ continueHref }: { continueHref: string }) {
           <div className="space-y-2">
             <Label htmlFor="requester">Richiedente</Label>
             <Input id="requester" value={profile.full_name} readOnly disabled />
-            <p className="text-xs text-muted-foreground">Deriva dal profilo autenticato.</p>
+            <p className="hidden text-xs text-muted-foreground">Deriva dal profilo autenticato.</p>
           </div>
 
           <div className="space-y-2">
@@ -95,7 +95,7 @@ export function RequestHeaderForm({ continueHref }: { continueHref: string }) {
               required
               autoComplete="off"
             />
-            <p className="text-xs text-muted-foreground">Testo libero, distinto dalla categoria degli articoli.</p>
+            <p className="hidden text-xs text-muted-foreground"></p>
           </div>
 
           <div className="space-y-2 sm:col-span-2">
@@ -106,12 +106,12 @@ export function RequestHeaderForm({ continueHref }: { continueHref: string }) {
               onChange={(event) => setHeader({ notes: event.target.value })}
               disabled={isSubmissionLocked}
               rows={3}
-              className="flex min-h-20 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="flex min-h-20 w-full rounded-md border border-input bg-white px-3 py-2 text-sm shadow-xs outline-none transition-[color,box-shadow] placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
             />
           </div>
         </CardContent>
-        <CardFooter className="flex-col items-stretch justify-between gap-3 border-t pt-6 sm:flex-row sm:items-center">
-          <p className="text-xs leading-5 text-muted-foreground">
+        <CardFooter className="flex-col items-stretch justify-end gap-3 border-t pt-6 sm:flex-row sm:items-center">
+          <p className="hidden text-xs leading-5 text-muted-foreground">
             I dati restano nella bozza locale. La richiesta viene creata soltanto alla conferma finale.
           </p>
           <Button

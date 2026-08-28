@@ -4,6 +4,7 @@ import { AppNavigation } from "@/components/layout/app-navigation";
 import { LogoutButton } from "@/components/logout-button";
 import { RequestDraftProvider } from "@/components/requests/request-draft-provider";
 import { RequestCartHeader } from "@/components/requests/request-cart-header";
+import { Toaster } from "@/components/ui/sonner";
 import { requireCurrentProfile } from "@/lib/auth/current-profile";
 import { ShieldCheck, UserRound } from "lucide-react";
 import { Suspense } from "react";
@@ -86,8 +87,10 @@ function AppShell({
         {children}
       </main>
 
+      <Toaster position="top-center" duration={8_000} />
+
       <footer data-print-shell="chrome" className="border-t border-border px-4 py-5 text-center text-xs text-muted-foreground sm:px-6">
-        Fabtek Materiali
+        Fabtek  | Warehouse Management | v.{process.env.NEXT_PUBLIC_APP_VERSION}
       </footer>
     </div>
   );

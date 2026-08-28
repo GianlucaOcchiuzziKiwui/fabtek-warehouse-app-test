@@ -122,6 +122,32 @@ export function buildCatalogNavigationHref(
   return `${basePath}?${params}`;
 }
 
+export function buildCatalogPreviousStepHref(
+  basePath: string,
+  filters: CatalogFilters,
+  rootBackHref?: string,
+): string | null {
+  switch (resolveCatalogNavigationStep(filters)) {
+    case "categories":
+      return rootBackHref ?? null;
+    case "families":
+      return basePath;
+    case "components": {
+      if (!filters.categoryId) return basePath;
+      return `${basePath}?${new URLSearchParams({ category: filters.categoryId })}`;
+    }
+    case "items": {
+      if (!filters.categoryId || !filters.familyId) return basePath;
+      return `${basePath}?${new URLSearchParams({
+        category: filters.categoryId,
+        family: filters.familyId,
+      })}`;
+    }
+    case "search":
+      return null;
+  }
+}
+
 export type StockStatus =
   | "available"
   | "low_stock"
@@ -459,7 +485,7 @@ export function canonicalizeCatalogFilters(
 
 export function getAvailabilityLabel(stock: StockView): AvailabilityLabel {
   if (!stock.trackInventory || stock.status === "unlimited") {
-    return { label: "Disponibilità non limitata", tone: "neutral" };
+    return { label: "Disponibile ", tone: "good" };
   }
 
   if (stock.status === "out_of_stock") {

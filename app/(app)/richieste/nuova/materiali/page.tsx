@@ -117,9 +117,8 @@ export default async function RequestMaterialsPage({ searchParams }: { searchPar
       <div className="flex flex-col items-start justify-between gap-4 sm:flex-row">
         <PageHeading
           title="Scegli i prodotti"
-          description="Cerca un prodotto oppure naviga Categoria → Famiglia → Componente → Item."
         />
-        <Button asChild variant="outline" className="shrink-0">
+        <Button asChild variant="secondary" className="shrink-0">
           <Link href={editHeaderHref}><PencilLine aria-hidden="true" />Modifica dati richiesta</Link>
         </Button>
       </div>

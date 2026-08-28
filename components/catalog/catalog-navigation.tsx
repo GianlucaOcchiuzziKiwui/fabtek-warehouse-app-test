@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   buildCatalogNavigationHref,
+  buildCatalogPreviousStepHref,
   getCatalogNavigationKindLabel,
   resolveCatalogNavigationStep,
   type CatalogFilterOptions,
@@ -13,8 +14,10 @@ import {
   type CatalogOption,
 } from "@/lib/data/catalog-mappers";
 import {
+  ArrowLeft,
   Boxes,
   Cable,
+  Check,
   ChevronRight,
   CircleDot,
   CircleGauge,
@@ -292,11 +295,48 @@ function Breadcrumbs({
   );
 }
 
+function CatalogStepHeading({
+  id,
+  icon: Icon,
+  title,
+  description,
+  backHref,
+}: {
+  id: string;
+  icon: LucideIcon;
+  title: string;
+  description: string;
+  backHref: string | null;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+          <Icon aria-hidden="true" className="size-5" />
+        </span>
+        <div className="min-w-0">
+          <h2 id={id} className="font-heading text-xl font-semibold">{title}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+        </div>
+      </div>
+      {backHref ? (
+        <Button asChild variant="outline" className="h-10 shrink-0">
+          <Link href={backHref}>
+            <ArrowLeft aria-hidden="true" />
+            Indietro
+          </Link>
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
 export function CatalogNavigation({
   basePath,
   filters,
   options,
   searchMatches,
+  rootBackHref,
   compact = false,
   children,
 }: {
@@ -304,10 +344,16 @@ export function CatalogNavigation({
   filters: CatalogFilters;
   options: CatalogFilterOptions;
   searchMatches: CatalogNavigationMatch[];
+  rootBackHref?: string;
   compact?: boolean;
   children?: ReactNode;
 }) {
   const step = resolveCatalogNavigationStep(filters);
+  const previousStepHref = buildCatalogPreviousStepHref(
+    basePath,
+    filters,
+    rootBackHref,
+  );
   const stepContent = {
     categories: {
       number: 1,
@@ -403,38 +449,31 @@ export function CatalogNavigation({
         </section>
       ) : (
         <div className="space-y-5">
-          <div className="flex items-center gap-3" aria-hidden="true">
-            <span className="h-px flex-1 bg-border" />
-            <span className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-              {step === "categories" ? "Oppure esplora per categoria" : "Continua il percorso"}
-            </span>
-            <span className="h-px flex-1 bg-border" />
-          </div>
           <Breadcrumbs basePath={basePath} filters={filters} options={options} />
           {step === "items" ? (
             <section aria-labelledby="catalog-items-title" className="space-y-4">
-              <div>
-                <p className="text-sm font-semibold text-primary">Step 4</p>
-                <h2 id="catalog-items-title" className="mt-1 font-heading text-xl font-semibold">Scegli un item</h2>
-                <p className="mt-1 text-sm text-muted-foreground">Sono mostrati soltanto gli item del componente selezionato.</p>
-              </div>
+              <CatalogStepHeading
+                id="catalog-items-title"
+                icon={Check}
+                title="Scegli un item"
+                description="Sono mostrati soltanto gli item del componente selezionato."
+                backHref={previousStepHref}
+              />
               {children}
             </section>
           ) : (() => {
             const content = stepContent[step];
             const Icon = content.icon;
+            const headingId = `catalog-step-${content.number}`;
             return (
-              <section aria-labelledby={`catalog-step-${content.number}`} className="space-y-4">
-                <div className="flex items-start gap-3">
-                  <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                    <Icon aria-hidden="true" className="size-5" />
-                  </span>
-                  <div>
-                    <p className="text-sm font-semibold text-primary">Step {content.number}</p>
-                    <h2 id={`catalog-step-${content.number}`} className="font-heading text-xl font-semibold">{content.title}</h2>
-                    <p className="mt-1 text-sm text-muted-foreground">{content.description}</p>
-                  </div>
-                </div>
+              <section aria-labelledby={headingId} className="space-y-4">
+                <CatalogStepHeading
+                  id={headingId}
+                  icon={Icon}
+                  title={content.title}
+                  description={content.description}
+                  backHref={previousStepHref}
+                />
                 <NavigationCards
                   basePath={basePath}
                   filters={filters}

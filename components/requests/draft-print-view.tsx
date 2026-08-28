@@ -168,7 +168,7 @@ function RemoveLineButton({
   return (
     <Button
       type="button"
-      variant="ghost"
+      variant="destructive"
       size="icon"
       aria-label={`Rimuovi ${label}`}
       onClick={() => onRemove(itemVariantId)}
@@ -275,7 +275,6 @@ export function DraftPrintView({
         <section className="space-y-3" aria-labelledby="draft-lines-title">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 id="draft-lines-title" className="font-heading text-xl font-semibold">Articoli ({lines.length})</h2>
-            <p className="text-sm text-muted-foreground">Il carrello non prenota il materiale.</p>
           </div>
           <div className="hidden overflow-hidden rounded-xl border border-border bg-card shadow-sm lg:block">
             <table className="w-full table-fixed text-left text-sm">

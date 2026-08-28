@@ -6,6 +6,7 @@ import {
   buildRequestHeaderHref,
   REQUEST_MATERIALS_PATH,
   buildRequestMaterialsHref,
+  buildRequestSummaryHref,
 } from "../lib/domain/requests/navigation.ts";
 
 const VARIANT_ID = "20000000-0000-0000-0000-000000000001";
@@ -38,6 +39,19 @@ test("drops partial or malformed catalog selections", () => {
   assert.equal(
     buildRequestMaterialsHref({ variantId: "javascript:alert(1)", categoryId: CATEGORY_ID }),
     REQUEST_MATERIALS_PATH,
+  );
+});
+
+test("builds the summary route with every draft line", () => {
+  assert.equal(
+    buildRequestSummaryHref([
+      { itemVariantId: VARIANT_ID, categoryId: CATEGORY_ID },
+      {
+        itemVariantId: "20000000-0000-0000-0000-000000000002",
+        categoryId: "30000000-0000-0000-0000-000000000002",
+      },
+    ]),
+    "/richieste/nuova/riepilogo?line=20000000-0000-0000-0000-000000000001%3A30000000-0000-0000-0000-000000000001&line=20000000-0000-0000-0000-000000000002%3A30000000-0000-0000-0000-000000000002",
   );
 });
 

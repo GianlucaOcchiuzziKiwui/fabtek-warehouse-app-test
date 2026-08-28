@@ -7,10 +7,15 @@ import {
   canAddDraftLine,
   stepDraftQuantity,
 } from "@/lib/domain/requests/line-rules";
+import { requestDraftReducer } from "@/lib/domain/requests/draft";
+import { buildRequestSummaryHref } from "@/lib/domain/requests/navigation";
 import { Check, Minus, Plus } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { toast } from "sonner";
 
-const SELECT_STYLES = "h-10 min-w-0 rounded-lg border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25";
+const SELECT_STYLES =
+  "h-10 min-w-0 rounded-lg border border-input bg-background px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25";
 
 type RequestCategory = {
   id: string;
@@ -33,43 +38,59 @@ export function RequestItemRowControls({
   };
   datasheetUrl: string | null;
 }) {
+  const router = useRouter();
   const { draft, addLine } = useRequestDraft();
-  const fixedCategory = categories.find((category) => category.id === selectedCategoryId)
-    ?? (categories.length === 1 ? categories[0] : null);
+  const fixedCategory =
+    categories.find((category) => category.id === selectedCategoryId) ??
+    (categories.length === 1 ? categories[0] : null);
   const [categoryId, setCategoryId] = useState(fixedCategory?.id ?? "");
   const [quantityValue, setQuantityValue] = useState("0");
   const [wasAdded, setWasAdded] = useState(false);
   const quantity = Number(quantityValue);
   const maximumQuantity = stock.trackInventory
-    ? stock.availableQuantity ?? 0
+    ? (stock.availableQuantity ?? 0)
     : 999_999;
   const validation = canAddDraftLine({ stock }, quantity);
   const headerIsComplete = isRequestHeaderComplete(draft.header);
-  const showQuantityError = headerIsComplete
-    && !validation.ok
-    && quantityValue !== "0";
+  const showQuantityError =
+    headerIsComplete && !validation.ok && quantityValue !== "0";
   const quantityErrorId = `request-quantity-error-${itemVariantId}`;
   const canAdd = headerIsComplete && Boolean(categoryId) && validation.ok;
 
   function addToDraft() {
     if (!canAdd) return;
-    addLine({ itemVariantId, categoryId, quantity });
+    const line = { itemVariantId, categoryId, quantity };
+    const nextDraft = requestDraftReducer(draft, { type: "add-line", line });
+    addLine(line);
     setWasAdded(true);
+    toast.success("Aggiunto al riepilogo", {
+      action: {
+        label: "Vai al riepilogo",
+        onClick: () => router.push(buildRequestSummaryHref(nextDraft.lines)),
+      },
+    });
   }
 
   function stepQuantity(delta: -1 | 1) {
-    setQuantityValue(String(stepDraftQuantity(quantityValue, delta, maximumQuantity)));
+    setQuantityValue(
+      String(stepDraftQuantity(quantityValue, delta, maximumQuantity)),
+    );
     setWasAdded(false);
   }
 
   return (
-    <div className={`grid items-start gap-x-3 ${fixedCategory ? "grid-cols-[8rem_auto]" : "grid-cols-[9rem_auto]"}`}>
+    <div
+      className={`grid items-start gap-x-3 ${fixedCategory ? "grid-cols-[8rem_auto]" : "grid-cols-[9rem_auto]"}`}
+    >
       <div>
         {fixedCategory ? (
           <span className="sr-only">Categoria: {fixedCategory.name}</span>
         ) : (
           <div className="w-36">
-            <label htmlFor={`request-category-${itemVariantId}`} className="mb-1 block text-xs font-medium">
+            <label
+              htmlFor={`request-category-${itemVariantId}`}
+              className="mb-1 block text-xs font-medium"
+            >
               Categoria
             </label>
             <select
@@ -82,14 +103,23 @@ export function RequestItemRowControls({
               className={SELECT_STYLES}
               required
             >
-              <option value="" disabled>Seleziona</option>
+              <option value="" disabled>
+                Seleziona
+              </option>
               {categories.map((category) => (
-                <option key={category.id} value={category.id}>{category.name}</option>
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
               ))}
             </select>
           </div>
         )}
-        <label htmlFor={`request-quantity-${itemVariantId}`} className="sr-only">Quantità</label>
+        <label
+          htmlFor={`request-quantity-${itemVariantId}`}
+          className="sr-only"
+        >
+          Quantità
+        </label>
         <div className="inline-flex items-center">
           <Button
             type="button"
@@ -116,7 +146,7 @@ export function RequestItemRowControls({
             inputMode="numeric"
             aria-invalid={showQuantityError}
             aria-describedby={showQuantityError ? quantityErrorId : undefined}
-            className="h-10 w-12 rounded-none border-y border-input bg-background px-1 text-center font-mono text-sm outline-none focus-visible:relative focus-visible:z-10 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25"
+            className="h-10 w-12 rounded-none border-y border-foreground/45 bg-background px-1 text-center font-mono text-sm outline-none focus-visible:relative focus-visible:z-10 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25"
           />
           <Button
             type="button"
@@ -132,9 +162,18 @@ export function RequestItemRowControls({
         </div>
       </div>
       <div>
-        <div className="flex items-center gap-2">
-          <Button type="button" variant="accent" onClick={addToDraft} disabled={!canAdd}>
-            {wasAdded ? <Check aria-hidden="true" /> : <Plus aria-hidden="true" />}
+        <div className="flex items-center justify-between gap-2">
+          <Button
+            type="button"
+            variant="accent"
+            onClick={addToDraft}
+            disabled={!canAdd}
+          >
+            {wasAdded ? (
+              <Check aria-hidden="true" />
+            ) : (
+              <Plus aria-hidden="true" />
+            )}
             {wasAdded ? "Aggiunto" : "Aggiungi"}
           </Button>
           {datasheetUrl ? (
@@ -144,14 +183,21 @@ export function RequestItemRowControls({
               </a>
             </Button>
           ) : (
-            <Button type="button" variant="outline" disabled>Data Sheet</Button>
+            <Button type="button" variant="outline" disabled>
+              Data Sheet
+            </Button>
           )}
         </div>
 
         {!headerIsComplete ? (
-          <p className="mt-2 max-w-52 text-xs text-amber-700">Completa l’intestazione prima di aggiungere materiali.</p>
+          <p className="mt-2 max-w-52 text-xs text-amber-700">
+            Completa l’intestazione prima di aggiungere materiali.
+          </p>
         ) : showQuantityError ? (
-          <p id={quantityErrorId} className="mt-2 max-w-52 text-xs text-destructive">
+          <p
+            id={quantityErrorId}
+            className="mt-2 max-w-52 text-xs text-destructive"
+          >
             {validation.error.message}
           </p>
         ) : null}

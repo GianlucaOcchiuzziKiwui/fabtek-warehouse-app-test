@@ -26,6 +26,36 @@ test("advances only through category, family, component and then items", () => {
   );
 });
 
+test("back navigation returns to the previous catalog step", () => {
+  const previous = catalogMappers.buildCatalogPreviousStepHref;
+
+  assert.equal(typeof previous, "function");
+  assert.equal(
+    previous("/richieste/nuova/materiali", {}, "/richieste/nuova"),
+    "/richieste/nuova",
+  );
+  assert.equal(
+    previous("/richieste/nuova/materiali", { categoryId: "cat-gas" }),
+    "/richieste/nuova/materiali",
+  );
+  assert.equal(
+    previous("/richieste/nuova/materiali", {
+      categoryId: "cat-gas",
+      familyId: "fam-valves",
+    }),
+    "/richieste/nuova/materiali?category=cat-gas",
+  );
+  assert.equal(
+    previous("/richieste/nuova/materiali", {
+      categoryId: "cat-gas",
+      familyId: "fam-valves",
+      componentId: "cmp-manual",
+    }),
+    "/richieste/nuova/materiali?category=cat-gas&family=fam-valves",
+  );
+  assert.equal(previous("/catalogo", {}), null);
+});
+
 test("taxonomy search takes priority over a stale navigation path", () => {
   assert.equal(
     catalogMappers.resolveCatalogNavigationStep({
