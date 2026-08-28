@@ -76,7 +76,7 @@ function InitialLine({ line }: { line: PdfLine }) {
 }
 
 function FinalLine({ line }: { line: PdfLine }) {
-  return <>
+  const content = <>
     <View style={styles.tableRow} wrap={false}>
       <Text style={[styles.compactCell, styles.finalCode]}>{line.fabtekCode}</Text>
       <Text style={[styles.compactCell, styles.finalDescription]}>{lineDescription(line)}</Text>
@@ -89,6 +89,8 @@ function FinalLine({ line }: { line: PdfLine }) {
       <Text>{index === 0 ? "Storico: " : ""}{fulfillment.fulfilledAtLabel}: {fulfillment.quantity} {line.unitOfMeasure}{fulfillment.notes ? ` — ${fulfillment.notes}` : ""}</Text>
     </View>) : <View style={styles.history}><Text>Storico: Nessuna evasione registrata</Text></View>}
   </>;
+
+  return (line.fulfillments?.length ?? 0) <= 3 ? <View wrap={false}>{content}</View> : content;
 }
 
 function MaterialTable({ document }: { document: PdfDocument }) {

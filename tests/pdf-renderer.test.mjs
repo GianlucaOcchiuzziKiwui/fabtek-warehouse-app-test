@@ -26,7 +26,7 @@ registerHooks({
 const { getPdfFilename } = await import("../lib/pdf/contracts.ts");
 const { renderPdfDocument } = await import("../lib/pdf/render-pdf.tsx");
 
-async function extractPdfText(buffer) {
+async function extractPdfPages(buffer) {
   const loadingTask = getDocument({
     data: new Uint8Array(buffer),
     useSystemFonts: true,
@@ -37,7 +37,11 @@ async function extractPdfText(buffer) {
     return content.items.map((item) => item.str).join(" ");
   }));
   await loadingTask.destroy();
-  return pages.join("\n");
+  return pages;
+}
+
+async function extractPdfText(buffer) {
+  return (await extractPdfPages(buffer)).join("\n");
 }
 
 const line = {
@@ -63,6 +67,17 @@ const common = {
   documentDateLabel: "28/08/2026",
   lines: [line],
 };
+
+function paginationLine(index) {
+  const number = String(index).padStart(3, "0");
+  return {
+    ...line,
+    fabtekCode: `FT-${number}`,
+    oracleSapioCode: `OR-${900 + index}`,
+    description: `Tubo flessibile PTFE serie ${number}`,
+    requestedQuantity: 10 + index,
+  };
+}
 
 test("renders every document kind as a real PDF", async () => {
   const documents = [
@@ -126,4 +141,44 @@ test("retains the final fulfillment when its history spans pages", async () => {
   });
 
   assert.match(await extractPdfText(buffer), /ULTIMO-EVASO/);
+});
+
+test("keeps initial request rows complete and final rows with their histories on one page", async () => {
+  const initialRequest = await renderPdfDocument({
+    kind: "initial_request",
+    requestNumber: 17,
+    statusLabel: "In preparazione",
+    ...common,
+    lines: Array.from({ length: 48 }, (_, index) => paginationLine(index + 1)),
+  });
+  const initialRowPage = (await extractPdfPages(initialRequest)).find((page) => page.includes("FT-009"));
+
+  assert.ok(initialRowPage);
+  assert.match(initialRowPage, /serie 009/);
+  assert.match(initialRowPage, /OR-909/);
+  assert.match(initialRowPage, /19 m/);
+
+  const finalReport = await renderPdfDocument({
+    kind: "final_report",
+    requestNumber: 17,
+    statusLabel: "Evasa",
+    ...common,
+    lines: Array.from({ length: 18 }, (_, index) => {
+      const material = paginationLine(index + 1);
+      return {
+        ...material,
+        fulfilledQuantity: material.requestedQuantity,
+        remainingQuantity: 0,
+        fulfillments: [
+          { quantity: 5, fulfilledAtLabel: "27/08/2026 10:00", notes: `Prima consegna FT-${String(index + 1).padStart(3, "0")}` },
+          { quantity: material.requestedQuantity - 5, fulfilledAtLabel: "28/08/2026 15:30", notes: `Consegna completa FT-${String(index + 1).padStart(3, "0")}` },
+        ],
+      };
+    }),
+  });
+  const finalRowPage = (await extractPdfPages(finalReport)).find((page) => page.includes("FT-006"));
+
+  assert.ok(finalRowPage);
+  assert.match(finalRowPage, /Prima consegna FT-006/);
+  assert.match(finalRowPage, /Consegna completa FT-006/);
 });
