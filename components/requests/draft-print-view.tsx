@@ -7,7 +7,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
 import { SubmitRequestButton } from "@/components/requests/submit-request-button";
 import { canAddDraftLine } from "@/lib/domain/requests/line-rules";
-import { ArrowLeft, Printer, Trash2 } from "lucide-react";
+import { ArrowLeft, Download, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
@@ -71,43 +71,6 @@ function RequestData({
       <div><dt className="text-muted-foreground">Utilities</dt><dd className="font-semibold">{valueOrDash(utilities)}</dd></div>
       <div><dt className="text-muted-foreground">Note</dt><dd className="whitespace-pre-wrap font-semibold">{valueOrDash(notes)}</dd></div>
     </dl>
-  );
-}
-
-function PrintTable({ lines }: { lines: ResolvedDraftLine[] }) {
-  return (
-    <table className="w-full border-collapse text-left text-[10px]">
-      <thead>
-        <tr className="bg-slate-100">
-          {[
-            "Part #",
-            "Categoria",
-            "Famiglia",
-            "Articolo",
-            "Misura",
-            "Materiale",
-            "Connessione",
-            "Quantità",
-          ].map((heading) => (
-            <th key={heading} scope="col" className="border border-slate-300 px-2 py-2 font-semibold">{heading}</th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {lines.map((line) => (
-          <tr key={line.itemVariantId} className="print-table-row align-top">
-            <td className="border border-slate-300 px-2 py-2 font-semibold">{line.partNumber}</td>
-            <td className="border border-slate-300 px-2 py-2">{valueOrDash(line.category)}</td>
-            <td className="border border-slate-300 px-2 py-2">{valueOrDash(line.family)}</td>
-            <td className="border border-slate-300 px-2 py-2">{valueOrDash(line.item)}</td>
-            <td className="border border-slate-300 px-2 py-2">{valueOrDash(line.size)}</td>
-            <td className="border border-slate-300 px-2 py-2">{valueOrDash(line.material)}</td>
-            <td className="border border-slate-300 px-2 py-2">{valueOrDash(line.connection)}</td>
-            <td className="border border-slate-300 px-2 py-2 text-right font-semibold">{line.quantity}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
   );
 }
 
@@ -194,6 +157,8 @@ export function DraftPrintView({
     isSubmissionLocked,
   } = useRequestDraft();
   const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>({});
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const detailsByLine = useMemo(
     () => new Map(details.map((line) => [`${line.itemVariantId}:${line.categoryId}`, line])),
     [details],
@@ -231,6 +196,48 @@ export function DraftPrintView({
     const quantity = Number(value);
     if (canAddDraftLine(line, quantity).ok) {
       setQuantity(line.itemVariantId, quantity);
+    }
+  }
+
+  async function downloadDraftPdf() {
+    setIsDownloading(true);
+    setDownloadError(null);
+    let objectUrl: string | null = null;
+
+    try {
+      const response = await fetch("/api/documents/draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          clientRequestId: draft.clientRequestId,
+          project: draft.header.project,
+          toolLine: draft.header.toolLine,
+          utilities: draft.header.utilities,
+          notes: draft.header.notes,
+          lines: draft.lines,
+        }),
+      });
+      if (!response.ok) {
+        const payload: unknown = await response.json().catch(() => null);
+        const message = typeof payload === "object" && payload !== null && "error" in payload
+          && typeof payload.error === "string"
+          ? payload.error
+          : "Non è stato possibile generare il PDF. Riprova.";
+        throw new Error(message);
+      }
+
+      objectUrl = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = "fabtek-distinta-bozza.pdf";
+      document.body.append(link);
+      link.click();
+      link.remove();
+    } catch (error) {
+      setDownloadError(error instanceof Error ? error.message : "Non è stato possibile generare il PDF. Riprova.");
+    } finally {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      setIsDownloading(false);
     }
   }
 
@@ -411,37 +418,15 @@ export function DraftPrintView({
           )}
           <div className="flex flex-col gap-3 sm:items-end">
             <SubmitRequestButton disabled={!canPrint} />
-            <Button type="button" onClick={() => window.print()} disabled={!canPrint}>
-              <Printer aria-hidden="true" />
-              Stampa distinta bozza
+            <Button type="button" onClick={downloadDraftPdf} disabled={!canPrint || isDownloading}>
+              <Download aria-hidden="true" />
+              {isDownloading ? "Generazione PDF..." : "Scarica distinta bozza"}
             </Button>
+            {downloadError ? <p role="alert" className="max-w-sm text-sm text-destructive">{downloadError}</p> : null}
           </div>
         </div>
       </div>
 
-      {canPrint ? (
-        <section className="request-draft-print print-only" aria-label="Distinta richiesta materiale bozza">
-          <div className="mb-8 flex items-start justify-between border-b-2 border-brand-navy pb-4">
-            <div>
-              <p className="font-heading text-2xl font-bold text-brand-navy">FABTEK</p>
-              <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Richiesta Materiali</p>
-            </div>
-            <h1 className="text-right font-heading text-xl font-semibold text-slate-900">Distinta richiesta materiale — bozza</h1>
-          </div>
-          <RequestData
-            requester={profile.full_name}
-            previewDate={previewDate}
-            project={draft.header.project}
-            toolLine={draft.header.toolLine}
-            utilities={draft.header.utilities}
-            notes={draft.header.notes}
-          />
-          <div className="mt-7"><PrintTable lines={resolvedLines} /></div>
-          <p className="mt-8 border-2 border-brand-copper px-4 py-3 text-center text-sm font-bold text-slate-900">
-            Documento non ancora confermato al magazzino
-          </p>
-        </section>
-      ) : null}
     </div>
   );
 }

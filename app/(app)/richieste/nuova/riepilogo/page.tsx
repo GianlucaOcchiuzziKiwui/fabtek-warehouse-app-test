@@ -98,7 +98,7 @@ export default function RequestSummaryPage({ searchParams }: { searchParams: Sum
       <div className="screen-only">
         <PageHeading
           title="Riepilogo richiesta"
-          description="Controlla intestazione e quantità, quindi stampa una distinta non ancora confermata."
+          description="Controlla intestazione e quantità, quindi scarica una distinta non ancora confermata."
         />
       </div>
       <Suspense fallback={<SummaryLoading />}>
