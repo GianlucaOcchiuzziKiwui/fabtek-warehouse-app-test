@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { registerHooks } from "node:module";
 import test from "node:test";
 
@@ -22,6 +23,8 @@ registerHooks({
 });
 
 const { createDraftPdf } = await import("../lib/domain/documents/draft-pdf.ts");
+const { mapCatalogRows, mapCatalogSelections } = await import("../lib/data/catalog-mappers.ts");
+const { mapDraftPdfDocument } = await import("../lib/pdf/mappers.ts");
 
 const VARIANT_ID = "20000000-0000-4000-8000-000000000001";
 const CATEGORY_ID = "30000000-0000-4000-8000-000000000001";
@@ -90,6 +93,59 @@ test("builds a draft PDF from validated quantities and server catalog details", 
   assert.equal(rendered[0].lines[0].requestedQuantity, 2);
   assert.equal(rendered[0].lines[0].fabtekCode, "FT-001");
   assert.equal(rendered[0].documentDateLabel, "28/08/2026");
+});
+
+test("keeps Oracle/Sapio loaded by the catalog selection query in the draft PDF DTO", async () => {
+  const catalogSource = await readFile("lib/data/catalog.ts", "utf8");
+  const selectionQuery = catalogSource.match(
+    /const CATALOG_SELECTION_SELECT = `([\s\S]*?)`;/u,
+  )?.[1];
+  assert.match(selectionQuery ?? "", /^\s*oracle_sapio_code,$/mu);
+
+  const variants = mapCatalogRows([{
+    id: VARIANT_ID,
+    fabtek_code: "FT-001",
+    oracle_sapio_code: "OR-900",
+    description: "Tubo flessibile PTFE",
+    diameter: "DN10",
+    material: "PTFE",
+    connection: "1/2 NPT",
+    technical_attributes: {},
+    component: {
+      id: "40000000-0000-4000-8000-000000000001",
+      name: "Tubo",
+      icon_key: "component",
+      family: {
+        id: "50000000-0000-4000-8000-000000000001",
+        name: "Flessibili",
+        icon_key: "boxes",
+      },
+    },
+    unit_of_measure: { code: "m", name: "Metri" },
+    categories: [{
+      category: { id: CATEGORY_ID, name: "Gas", icon_key: "factory" },
+    }],
+    suppliers: [],
+    assets: [],
+  }], [{
+    item_variant_id: VARIANT_ID,
+    track_inventory: false,
+    available_quantity: null,
+    low_stock_threshold: null,
+    stock_status: "unlimited",
+  }]);
+  const selections = mapCatalogSelections([{
+    itemVariantId: VARIANT_ID,
+    categoryId: CATEGORY_ID,
+  }], variants);
+  const document = mapDraftPdfDocument(
+    validInput(),
+    "Mario Rossi",
+    selections,
+    new Date("2026-08-28T10:00:00Z"),
+  );
+
+  assert.equal(document.lines[0].oracleSapioCode, "OR-900");
 });
 
 test("rejects a draft when a catalog line is no longer available", async () => {

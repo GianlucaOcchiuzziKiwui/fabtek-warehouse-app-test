@@ -124,6 +124,7 @@ const CATALOG_SELECT = `
 const CATALOG_SELECTION_SELECT = `
   id,
   fabtek_code,
+  oracle_sapio_code,
   description,
   diameter,
   material,
