@@ -1,6 +1,6 @@
 begin;
 
-select plan(54);
+select plan(68);
 
 select has_function(
   'public',
@@ -11,13 +11,13 @@ select has_function(
 select has_function(
   'public',
   'complete_generated_document_job',
-  array['uuid', 'text', 'text', 'text', 'text[]', 'text'],
+  array['uuid', 'integer', 'text', 'text', 'text', 'text[]', 'text'],
   'document jobs expose an atomic completion function'
 );
 select has_function(
   'public',
   'fail_generated_document_job',
-  array['uuid', 'text', 'timestamp with time zone', 'boolean'],
+  array['uuid', 'integer', 'text', 'timestamp with time zone', 'boolean'],
   'document jobs expose an atomic failure function'
 );
 select has_function(
@@ -29,13 +29,13 @@ select has_function(
 select has_function(
   'public',
   'complete_notification_job',
-  array['uuid', 'text'],
+  array['uuid', 'integer', 'text'],
   'notification jobs expose an atomic completion function'
 );
 select has_function(
   'public',
   'fail_notification_job',
-  array['uuid', 'text', 'timestamp with time zone', 'boolean'],
+  array['uuid', 'integer', 'text', 'timestamp with time zone', 'boolean'],
   'notification jobs expose an atomic failure function'
 );
 
@@ -172,6 +172,40 @@ select ok(
   (select lease_expires_at > now() from reclaimed_document),
   'recovered document jobs receive a fresh lease'
 );
+select is(
+  public.complete_generated_document_job(
+    'a1000000-0000-0000-0000-000000000001',
+    1,
+    'requests/1/stale.pdf',
+    repeat('f', 64),
+    '1',
+    array['warehouse@example.test'],
+    'Stale document worker'
+  ),
+  false,
+  'the first document worker cannot complete a replacement lease'
+);
+select is(
+  public.fail_generated_document_job(
+    'a1000000-0000-0000-0000-000000000001',
+    1,
+    'STALE_WORKER',
+    now() + interval '5 minutes',
+    false
+  ),
+  false,
+  'the first document worker cannot fail a replacement lease'
+);
+select ok(
+  (
+    select status = 'processing'
+      and attempts = 2
+      and lease_expires_at > now()
+    from public.generated_documents
+    where id = 'a1000000-0000-0000-0000-000000000001'
+  ),
+  'stale document updates leave the replacement lease unchanged'
+);
 
 update public.generated_documents
 set lease_expires_at = now() - interval '1 second'
@@ -180,6 +214,7 @@ where id = 'a1000000-0000-0000-0000-000000000001';
 select is(
   public.complete_generated_document_job(
     'a1000000-0000-0000-0000-000000000001',
+    2,
     'requests/1/initial-request-v1.pdf',
     repeat('a', 64),
     '1',
@@ -215,6 +250,7 @@ where id = 'a1000000-0000-0000-0000-000000000001';
 select is(
   public.complete_generated_document_job(
     'a1000000-0000-0000-0000-000000000001',
+    2,
     'requests/1/initial-request-v1.pdf',
     repeat('a', 64),
     '1',
@@ -254,6 +290,7 @@ where id = 'a1000000-0000-0000-0000-000000000001';
 select is(
   public.complete_generated_document_job(
     'a1000000-0000-0000-0000-000000000001',
+    2,
     'requests/1/initial-request-v1.pdf',
     repeat('a', 64),
     '1',
@@ -310,8 +347,39 @@ select is(
   'recovering an expired notification lease increments attempts'
 );
 select is(
+  public.complete_notification_job(
+    (select id from reclaimed_notification),
+    1,
+    'stale-provider-message'
+  ),
+  false,
+  'the first notification worker cannot complete a replacement lease'
+);
+select is(
   public.fail_notification_job(
     (select id from reclaimed_notification),
+    1,
+    'STALE_WORKER',
+    now() + interval '5 minutes',
+    false
+  ),
+  false,
+  'the first notification worker cannot fail a replacement lease'
+);
+select ok(
+  (
+    select status = 'processing'
+      and attempts = 2
+      and lease_expires_at > now()
+    from public.notification_jobs
+    where id = (select id from reclaimed_notification)
+  ),
+  'stale notification updates leave the replacement lease unchanged'
+);
+select is(
+  public.fail_notification_job(
+    (select id from reclaimed_notification),
+    2,
     'PROVIDER_UNAVAILABLE',
     now() + interval '5 minutes',
     false
@@ -352,6 +420,7 @@ select is(
 select is(
   public.complete_notification_job(
     (select id from third_notification_claim),
+    3,
     'provider-message-1'
   ),
   true,
@@ -403,6 +472,7 @@ select is(
 select is(
   public.fail_generated_document_job(
     'a1000000-0000-0000-0000-000000000002',
+    1,
     'RENDER_FAILED',
     now(),
     true
@@ -422,6 +492,7 @@ select is(
 select is(
   public.fail_generated_document_job(
     'a1000000-0000-0000-0000-000000000003',
+    1,
     'UPLOAD_FAILED',
     now() + interval '5 minutes',
     false
@@ -496,6 +567,7 @@ select is(
 select is(
   public.fail_notification_job(
     'b1000000-0000-0000-0000-000000000004',
+    1,
     'INVALID_RECIPIENTS',
     now(),
     true
@@ -513,6 +585,197 @@ select is(
   'a terminal notification error produces failed status'
 );
 
+insert into public.material_requests (
+  id,
+  client_request_id,
+  requester_id,
+  project,
+  tool_line,
+  utilities
+)
+values
+  (
+    '11000000-0000-0000-0000-000000000005',
+    '12000000-0000-0000-0000-000000000005',
+    '51000000-0000-0000-0000-000000000001',
+    'Expired fifth document attempt',
+    'T-5',
+    'Test'
+  ),
+  (
+    '11000000-0000-0000-0000-000000000006',
+    '12000000-0000-0000-0000-000000000006',
+    '51000000-0000-0000-0000-000000000001',
+    'Fifth document failure',
+    'T-6',
+    'Test'
+  ),
+  (
+    '11000000-0000-0000-0000-000000000007',
+    '12000000-0000-0000-0000-000000000007',
+    '51000000-0000-0000-0000-000000000001',
+    'Expired fifth notification attempt',
+    'T-7',
+    'Test'
+  ),
+  (
+    '11000000-0000-0000-0000-000000000008',
+    '12000000-0000-0000-0000-000000000008',
+    '51000000-0000-0000-0000-000000000001',
+    'Fifth notification failure',
+    'T-8',
+    'Test'
+  );
+
+insert into public.generated_documents (
+  id,
+  request_id,
+  document_type,
+  status,
+  attempts,
+  lease_expires_at
+)
+values
+  (
+    'a1000000-0000-0000-0000-000000000005',
+    '11000000-0000-0000-0000-000000000005',
+    'initial_request',
+    'processing',
+    5,
+    now() - interval '1 second'
+  ),
+  (
+    'a1000000-0000-0000-0000-000000000006',
+    '11000000-0000-0000-0000-000000000006',
+    'initial_request',
+    'processing',
+    5,
+    now() + interval '5 minutes'
+  ),
+  (
+    'a1000000-0000-0000-0000-000000000007',
+    '11000000-0000-0000-0000-000000000007',
+    'initial_request',
+    'completed',
+    1,
+    null
+  ),
+  (
+    'a1000000-0000-0000-0000-000000000008',
+    '11000000-0000-0000-0000-000000000008',
+    'initial_request',
+    'completed',
+    1,
+    null
+  );
+
+select is(
+  (select count(*) from public.claim_generated_document_jobs(1, 300)),
+  0::bigint,
+  'an expired fifth document attempt is not claimed again'
+);
+select ok(
+  (
+    select status = 'failed'
+      and lease_expires_at is null
+      and last_error = 'MAX_ATTEMPTS_EXHAUSTED'
+    from public.generated_documents
+    where id = 'a1000000-0000-0000-0000-000000000005'
+  ),
+  'claim atomically terminalizes an expired fifth document attempt'
+);
+select is(
+  public.fail_generated_document_job(
+    'a1000000-0000-0000-0000-000000000006',
+    5,
+    'RETRY_REQUESTED_AFTER_LIMIT',
+    now() + interval '5 minutes',
+    false
+  ),
+  true,
+  'a fifth document failure is handled even when marked retryable'
+);
+select is(
+  (
+    select status::text
+    from public.generated_documents
+    where id = 'a1000000-0000-0000-0000-000000000006'
+  ),
+  'failed',
+  'a fifth document failure cannot return to pending'
+);
+
+insert into public.notification_jobs (
+  id,
+  request_id,
+  document_id,
+  document_type,
+  recipients,
+  subject,
+  status,
+  attempts,
+  lease_expires_at
+)
+values
+  (
+    'b1000000-0000-0000-0000-000000000007',
+    '11000000-0000-0000-0000-000000000007',
+    'a1000000-0000-0000-0000-000000000007',
+    'initial_request',
+    array['warehouse@example.test'],
+    'Expired fifth notification attempt',
+    'processing',
+    5,
+    now() - interval '1 second'
+  ),
+  (
+    'b1000000-0000-0000-0000-000000000008',
+    '11000000-0000-0000-0000-000000000008',
+    'a1000000-0000-0000-0000-000000000008',
+    'initial_request',
+    array['warehouse@example.test'],
+    'Fifth notification failure',
+    'processing',
+    5,
+    now() + interval '5 minutes'
+  );
+
+select is(
+  (select count(*) from public.claim_notification_jobs(1, 300)),
+  0::bigint,
+  'an expired fifth notification attempt is not claimed again'
+);
+select ok(
+  (
+    select status = 'failed'
+      and lease_expires_at is null
+      and last_error = 'MAX_ATTEMPTS_EXHAUSTED'
+    from public.notification_jobs
+    where id = 'b1000000-0000-0000-0000-000000000007'
+  ),
+  'claim atomically terminalizes an expired fifth notification attempt'
+);
+select is(
+  public.fail_notification_job(
+    'b1000000-0000-0000-0000-000000000008',
+    5,
+    'RETRY_REQUESTED_AFTER_LIMIT',
+    now() + interval '5 minutes',
+    false
+  ),
+  true,
+  'a fifth notification failure is handled even when marked retryable'
+);
+select is(
+  (
+    select status::text
+    from public.notification_jobs
+    where id = 'b1000000-0000-0000-0000-000000000008'
+  ),
+  'failed',
+  'a fifth notification failure cannot return to pending'
+);
+
 select is(
   has_function_privilege(
     'authenticated',
@@ -525,7 +788,7 @@ select is(
 select is(
   has_function_privilege(
     'authenticated',
-    'public.complete_generated_document_job(uuid,text,text,text,text[],text)',
+    'public.complete_generated_document_job(uuid,integer,text,text,text,text[],text)',
     'EXECUTE'
   ),
   false,
@@ -534,7 +797,7 @@ select is(
 select is(
   has_function_privilege(
     'authenticated',
-    'public.fail_generated_document_job(uuid,text,timestamp with time zone,boolean)',
+    'public.fail_generated_document_job(uuid,integer,text,timestamp with time zone,boolean)',
     'EXECUTE'
   ),
   false,
@@ -552,7 +815,7 @@ select is(
 select is(
   has_function_privilege(
     'authenticated',
-    'public.complete_notification_job(uuid,text)',
+    'public.complete_notification_job(uuid,integer,text)',
     'EXECUTE'
   ),
   false,
@@ -561,7 +824,7 @@ select is(
 select is(
   has_function_privilege(
     'authenticated',
-    'public.fail_notification_job(uuid,text,timestamp with time zone,boolean)',
+    'public.fail_notification_job(uuid,integer,text,timestamp with time zone,boolean)',
     'EXECUTE'
   ),
   false,
@@ -580,7 +843,7 @@ select is(
 select is(
   has_function_privilege(
     'service_role',
-    'public.complete_generated_document_job(uuid,text,text,text,text[],text)',
+    'public.complete_generated_document_job(uuid,integer,text,text,text,text[],text)',
     'EXECUTE'
   ),
   true,
@@ -589,7 +852,7 @@ select is(
 select is(
   has_function_privilege(
     'service_role',
-    'public.fail_generated_document_job(uuid,text,timestamp with time zone,boolean)',
+    'public.fail_generated_document_job(uuid,integer,text,timestamp with time zone,boolean)',
     'EXECUTE'
   ),
   true,
@@ -607,7 +870,7 @@ select is(
 select is(
   has_function_privilege(
     'service_role',
-    'public.complete_notification_job(uuid,text)',
+    'public.complete_notification_job(uuid,integer,text)',
     'EXECUTE'
   ),
   true,
@@ -616,7 +879,7 @@ select is(
 select is(
   has_function_privilege(
     'service_role',
-    'public.fail_notification_job(uuid,text,timestamp with time zone,boolean)',
+    'public.fail_notification_job(uuid,integer,text,timestamp with time zone,boolean)',
     'EXECUTE'
   ),
   true,
