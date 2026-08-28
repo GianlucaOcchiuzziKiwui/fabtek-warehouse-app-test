@@ -31,16 +31,30 @@ const {
   mapOfficialPdfDocument,
 } = await import("../lib/pdf/mappers.ts");
 const {
+  claimNotificationJobs,
+  completeNotificationJob,
   DocumentDataError,
+  downloadGeneratedPdf,
+  failNotificationJob,
+  loadCompletedGeneratedDocument,
   claimGeneratedDocumentJobs,
   uploadGeneratedPdf,
 } = await import("../lib/data/documents.ts");
 const { createAdminClient } = await import("../lib/supabase/admin.ts");
-const { processDocumentJobs } = await import("../lib/domain/documents/worker.ts");
+const {
+  processDocumentJobs,
+  processNotificationJobs,
+} = await import("../lib/domain/documents/worker.ts");
+const {
+  DocumentEmailError,
+  sendDocumentEmail,
+} = await import("../lib/email/resend.ts");
 
 const REQUEST_ID = "10000000-0000-4000-8000-000000000001";
 const JOB_ID = "20000000-0000-4000-8000-000000000001";
 const LINE_ID = "30000000-0000-4000-8000-000000000001";
+const NOTIFICATION_JOB_ID = "40000000-0000-4000-8000-000000000001";
+const DOCUMENT_ID = "50000000-0000-4000-8000-000000000001";
 const TEST_PDF_SHA256 = "3c87d37f1dbea6909f917ce437c390fb8e655a774387d9e69301c0b2283d5b63";
 const STALE_PDF_SHA256 = "55899375fbc45517a38325d486737f3afb61ababaf25192b480d61129fb07798";
 const CURRENT_PDF_SHA256 = "542be9e38348b0a9026ec6476c9860d2b94ffe8e69abe362f464acd49ecccbd0";
@@ -52,6 +66,25 @@ const job = {
   templateVersion: "1",
   attempts: 2,
   leaseExpiresAt: "2026-08-28T10:05:00.000Z",
+};
+
+const notificationJob = {
+  id: NOTIFICATION_JOB_ID,
+  requestId: REQUEST_ID,
+  documentId: DOCUMENT_ID,
+  documentType: "initial_request",
+  recipients: ["warehouse@example.com"],
+  subject: "CMKT_RDM_Linea A_Aria compressa_Mario Rossi_17",
+  attempts: 2,
+  leaseExpiresAt: "2026-08-28T10:05:00.000Z",
+};
+
+const completedDocument = {
+  id: DOCUMENT_ID,
+  requestId: REQUEST_ID,
+  documentType: "initial_request",
+  requestNumber: 17,
+  storagePath: `requests/${REQUEST_ID}/initial-request-v1-${TEST_PDF_SHA256}.pdf`,
 };
 
 const officialSource = {
@@ -94,6 +127,19 @@ function workerDependencies(overrides = {}) {
     }),
     completeDocument: async () => {},
     failDocument: async () => {},
+    now: () => new Date("2026-08-28T10:00:00Z"),
+    ...overrides,
+  };
+}
+
+function notificationWorkerDependencies(overrides = {}) {
+  return {
+    claimNotifications: async () => [notificationJob],
+    loadCompletedDocument: async () => completedDocument,
+    download: async () => Buffer.from("%PDF-email"),
+    sendEmail: async () => ({ providerMessageId: "provider-message-1" }),
+    completeNotification: async () => {},
+    failNotification: async () => {},
     now: () => new Date("2026-08-28T10:00:00Z"),
     ...overrides,
   };
@@ -647,4 +693,367 @@ test("keeps an uploaded document retryable when email configuration is missing",
     if (previous.recipients === undefined) delete process.env.REQUEST_EMAIL_RECIPIENTS;
     else process.env.REQUEST_EMAIL_RECIPIENTS = previous.recipients;
   }
+});
+
+test("sends a PDF attachment as base64 with a stable provider idempotency key", async () => {
+  const clientKeys = [];
+  const calls = [];
+
+  const result = await sendDocumentEmail({
+    apiKey: "resend-key",
+    from: "Fabtek <noreply@example.com>",
+    recipients: ["warehouse@example.com"],
+    subject: "CMKT_RDM_Linea A_Aria compressa_Mario Rossi_17",
+    attachment: {
+      filename: "fabtek-richiesta-000017.pdf",
+      buffer: Buffer.from("%PDF-email"),
+    },
+    idempotencyKey: `document-notification/${JOB_ID}`,
+  }, {
+    createClient: (apiKey) => {
+      clientKeys.push(apiKey);
+      return {
+        emails: {
+          send: async (payload, options) => {
+            calls.push({ payload, options });
+            return { data: { id: "provider-message-1" }, error: null };
+          },
+        },
+      };
+    },
+  });
+
+  assert.deepEqual(result, { providerMessageId: "provider-message-1" });
+  assert.deepEqual(clientKeys, ["resend-key"]);
+  assert.deepEqual(calls[0].options, {
+    idempotencyKey: `document-notification/${JOB_ID}`,
+  });
+  assert.deepEqual(calls[0].payload.attachments, [{
+    filename: "fabtek-richiesta-000017.pdf",
+    content: Buffer.from("%PDF-email").toString("base64"),
+  }]);
+  assert.equal(calls[0].payload.to[0], "warehouse@example.com");
+  assert.match(calls[0].payload.html, /documento richiesto/iu);
+  assert.match(calls[0].payload.text, /documento richiesto/iu);
+});
+
+test("maps provider failures to a stable email error without leaking provider or recipient details", async () => {
+  await assert.rejects(
+    () => sendDocumentEmail({
+      apiKey: "resend-key",
+      from: "Fabtek <noreply@example.com>",
+      recipients: ["sensitive-recipient@example.com"],
+      subject: "Sensitive subject",
+      attachment: {
+        filename: "fabtek-richiesta-000017.pdf",
+        buffer: Buffer.from("%PDF-email"),
+      },
+      idempotencyKey: `document-notification/${JOB_ID}`,
+    }, {
+      createClient: () => ({
+        emails: {
+          send: async () => ({
+            data: null,
+            error: { message: "provider rejected sensitive-recipient@example.com" },
+          }),
+        },
+      }),
+    }),
+    (error) => error instanceof DocumentEmailError
+      && error.code === "DOCUMENT_EMAIL_SEND_FAILED"
+      && !error.message.includes("sensitive-recipient@example.com")
+      && !error.message.includes("provider rejected"),
+  );
+});
+
+test("rejects provider success responses without a message id", async () => {
+  await assert.rejects(
+    () => sendDocumentEmail({
+      apiKey: "resend-key",
+      from: "Fabtek <noreply@example.com>",
+      recipients: ["warehouse@example.com"],
+      subject: "CMKT_RDM_Linea A_Aria compressa_Mario Rossi_17",
+      attachment: {
+        filename: "fabtek-richiesta-000017.pdf",
+        buffer: Buffer.from("%PDF-email"),
+      },
+      idempotencyKey: `document-notification/${JOB_ID}`,
+    }, {
+      createClient: () => ({
+        emails: {
+          send: async () => ({ data: {}, error: null }),
+        },
+      }),
+    }),
+    (error) => error instanceof DocumentEmailError
+      && error.code === "DOCUMENT_EMAIL_SEND_FAILED",
+  );
+});
+
+test("normalizes email client initialization failures", async () => {
+  await assert.rejects(
+    () => sendDocumentEmail({
+      apiKey: "sensitive-resend-key",
+      from: "Fabtek <noreply@example.com>",
+      recipients: ["warehouse@example.com"],
+      subject: "CMKT_RDM_Linea A_Aria compressa_Mario Rossi_17",
+      attachment: {
+        filename: "fabtek-richiesta-000017.pdf",
+        buffer: Buffer.from("%PDF-email"),
+      },
+      idempotencyKey: `document-notification/${JOB_ID}`,
+    }, {
+      createClient: () => {
+        throw new Error("invalid sensitive-resend-key");
+      },
+    }),
+    (error) => error instanceof DocumentEmailError
+      && error.code === "DOCUMENT_EMAIL_SEND_FAILED"
+      && !error.message.includes("sensitive-resend-key"),
+  );
+});
+
+test("sends an already completed PDF without invoking the renderer and completes the leased notification", async () => {
+  const calls = [];
+  const renderCalls = [];
+  const sendCalls = [];
+
+  const result = await processNotificationJobs(
+    { batchSize: 4, leaseSeconds: 120 },
+    notificationWorkerDependencies({
+      claimNotifications: async (input) => {
+        calls.push(["claim", input]);
+        return [notificationJob];
+      },
+      loadCompletedDocument: async (documentId) => {
+        calls.push(["load", documentId]);
+        return completedDocument;
+      },
+      download: async (path) => {
+        calls.push(["download", path]);
+        return Buffer.from("%PDF-email");
+      },
+      render: async (document) => {
+        renderCalls.push(document);
+        return Buffer.from("%PDF-rendered-again");
+      },
+      sendEmail: async (input) => {
+        calls.push(["send", input]);
+        sendCalls.push(input);
+        return { providerMessageId: "provider-message-1" };
+      },
+      completeNotification: async (input) => {
+        calls.push(["complete", input]);
+      },
+    }),
+  );
+
+  assert.deepEqual(result, { claimed: 1, completed: 1, failed: 0 });
+  assert.deepEqual(calls.map(([name]) => name), [
+    "claim",
+    "load",
+    "download",
+    "send",
+    "complete",
+  ]);
+  assert.deepEqual(calls[0][1], { batchSize: 4, leaseSeconds: 120 });
+  assert.equal(sendCalls[0].idempotencyKey, `document-notification/${notificationJob.id}`);
+  assert.equal(sendCalls[0].attachment.filename, "fabtek-richiesta-000017.pdf");
+  assert.equal(sendCalls[0].attachment.buffer.toString(), "%PDF-email");
+  assert.deepEqual(sendCalls[0].recipients, notificationJob.recipients);
+  assert.equal(renderCalls.length, 0);
+  assert.deepEqual(calls[4][1], {
+    jobId: NOTIFICATION_JOB_ID,
+    attempts: 2,
+    providerMessageId: "provider-message-1",
+  });
+});
+
+test("retries a provider failure without changing or regenerating the completed document", async () => {
+  const failures = [];
+  const downloads = [];
+  const documentWrites = [];
+
+  const result = await processNotificationJobs({}, notificationWorkerDependencies({
+    download: async (path) => {
+      downloads.push(path);
+      return Buffer.from("%PDF-email");
+    },
+    sendEmail: async () => {
+      throw new DocumentEmailError();
+    },
+    failNotification: async (input) => failures.push(input),
+    completeDocument: async (input) => documentWrites.push(input),
+  }));
+
+  assert.deepEqual(result, { claimed: 1, completed: 0, failed: 1 });
+  assert.deepEqual(downloads, [completedDocument.storagePath]);
+  assert.deepEqual(failures, [{
+    jobId: NOTIFICATION_JOB_ID,
+    attempts: 2,
+    error: "DOCUMENT_EMAIL_SEND_FAILED",
+    retryAt: "2026-08-28T10:05:00.000Z",
+    terminal: false,
+  }]);
+  assert.equal(documentWrites.length, 0);
+});
+
+test("continues the notification batch after one email fails", async () => {
+  const secondJob = {
+    ...notificationJob,
+    id: "40000000-0000-4000-8000-000000000002",
+    documentId: "50000000-0000-4000-8000-000000000002",
+  };
+  const completions = [];
+  const failures = [];
+
+  const result = await processNotificationJobs({}, notificationWorkerDependencies({
+    claimNotifications: async () => [notificationJob, secondJob],
+    loadCompletedDocument: async (documentId) => ({
+      ...completedDocument,
+      id: documentId,
+    }),
+    sendEmail: async (input) => {
+      if (input.idempotencyKey.endsWith(notificationJob.id)) {
+        throw new DocumentEmailError();
+      }
+      return { providerMessageId: "provider-message-2" };
+    },
+    completeNotification: async (input) => completions.push(input),
+    failNotification: async (input) => failures.push(input),
+  }));
+
+  assert.deepEqual(result, { claimed: 2, completed: 1, failed: 1 });
+  assert.equal(failures[0].jobId, notificationJob.id);
+  assert.equal(completions[0].jobId, secondJob.id);
+  assert.equal(completions[0].attempts, secondJob.attempts);
+});
+
+test("claims notification rows with normalized recipients and bounded lease arguments", async () => {
+  const calls = [];
+  const jobs = await claimNotificationJobs(
+    { batchSize: 4, leaseSeconds: 120 },
+    {
+      createClient: () => ({
+        rpc: async (name, args) => {
+          calls.push({ name, args });
+          return {
+            data: [{
+              id: NOTIFICATION_JOB_ID,
+              request_id: REQUEST_ID,
+              document_id: DOCUMENT_ID,
+              document_type: "initial_request",
+              recipients: ["warehouse@example.com"],
+              subject: notificationJob.subject,
+              attempts: 2,
+              lease_expires_at: "2026-08-28T10:05:00.000Z",
+            }],
+            error: null,
+          };
+        },
+      }),
+    },
+  );
+
+  assert.deepEqual(jobs, [notificationJob]);
+  assert.deepEqual(calls, [{
+    name: "claim_notification_jobs",
+    args: { p_limit: 4, p_lease_seconds: 120 },
+  }]);
+});
+
+test("loads only completed document metadata and downloads its private PDF", async () => {
+  const queryCalls = [];
+  const storageCalls = [];
+  const query = {
+    select(value) {
+      queryCalls.push(["select", value]);
+      return this;
+    },
+    eq(column, value) {
+      queryCalls.push(["eq", column, value]);
+      return this;
+    },
+    async maybeSingle() {
+      return {
+        data: {
+          id: DOCUMENT_ID,
+          request_id: REQUEST_ID,
+          document_type: "initial_request",
+          storage_path: completedDocument.storagePath,
+          request: { request_number: 17 },
+        },
+        error: null,
+      };
+    },
+  };
+  const createClient = () => ({
+    from: (table) => {
+      queryCalls.push(["from", table]);
+      return query;
+    },
+    storage: {
+      from: (bucket) => ({
+        download: async (path) => {
+          storageCalls.push({ bucket, path });
+          return { data: new Blob(["%PDF-private"]), error: null };
+        },
+      }),
+    },
+  });
+
+  const metadata = await loadCompletedGeneratedDocument(DOCUMENT_ID, { createClient });
+  const buffer = await downloadGeneratedPdf(completedDocument.storagePath, { createClient });
+
+  assert.deepEqual(metadata, completedDocument);
+  assert.deepEqual(queryCalls.slice(2), [
+    ["eq", "id", DOCUMENT_ID],
+    ["eq", "status", "completed"],
+  ]);
+  assert.deepEqual(storageCalls, [{
+    bucket: "generated-documents",
+    path: completedDocument.storagePath,
+  }]);
+  assert.equal(buffer.toString(), "%PDF-private");
+});
+
+test("passes the claimed attempt to notification complete and fail RPCs", async () => {
+  const calls = [];
+  const createClient = () => ({
+    rpc: async (name, args) => {
+      calls.push({ name, args });
+      return { data: true, error: null };
+    },
+  });
+
+  await completeNotificationJob({
+    jobId: NOTIFICATION_JOB_ID,
+    attempts: 2,
+    providerMessageId: "provider-message-1",
+  }, { createClient });
+  await failNotificationJob({
+    jobId: NOTIFICATION_JOB_ID,
+    attempts: 2,
+    error: "DOCUMENT_EMAIL_SEND_FAILED",
+    retryAt: "2026-08-28T10:05:00.000Z",
+    terminal: false,
+  }, { createClient });
+
+  assert.deepEqual(calls, [{
+    name: "complete_notification_job",
+    args: {
+      p_job_id: NOTIFICATION_JOB_ID,
+      p_attempts: 2,
+      p_provider_message_id: "provider-message-1",
+    },
+  }, {
+    name: "fail_notification_job",
+    args: {
+      p_job_id: NOTIFICATION_JOB_ID,
+      p_attempts: 2,
+      p_error: "DOCUMENT_EMAIL_SEND_FAILED",
+      p_retry_at: "2026-08-28T10:05:00.000Z",
+      p_terminal: false,
+    },
+  }]);
 });

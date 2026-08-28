@@ -14,6 +14,25 @@ export type ClaimedDocumentJob = {
   leaseExpiresAt: string;
 };
 
+export type ClaimedNotificationJob = {
+  id: string;
+  requestId: string;
+  documentId: string;
+  documentType: OfficialDocumentKind;
+  recipients: string[];
+  subject: string;
+  attempts: number;
+  leaseExpiresAt: string;
+};
+
+export type CompletedGeneratedDocument = {
+  id: string;
+  requestId: string;
+  documentType: OfficialDocumentKind;
+  requestNumber: number;
+  storagePath: string;
+};
+
 export type OfficialPdfFulfillmentSource = {
   id: string;
   quantity: number;
@@ -74,6 +93,14 @@ export type FailDocumentJobInput = {
   terminal: boolean;
 };
 
+export type CompleteNotificationJobInput = {
+  jobId: string;
+  attempts: number;
+  providerMessageId: string;
+};
+
+export type FailNotificationJobInput = FailDocumentJobInput;
+
 export type DocumentDataErrorCode =
   | "CLAIM_DOCUMENTS_FAILED"
   | "INVALID_DOCUMENT_JOB_RESPONSE"
@@ -83,7 +110,17 @@ export type DocumentDataErrorCode =
   | "UPLOAD_GENERATED_PDF_FAILED"
   | "COMPLETE_DOCUMENT_JOB_FAILED"
   | "FAIL_DOCUMENT_JOB_FAILED"
-  | "DOCUMENT_JOB_LEASE_LOST";
+  | "DOCUMENT_JOB_LEASE_LOST"
+  | "CLAIM_NOTIFICATIONS_FAILED"
+  | "INVALID_NOTIFICATION_JOB_RESPONSE"
+  | "LOAD_COMPLETED_DOCUMENT_FAILED"
+  | "COMPLETED_DOCUMENT_NOT_FOUND"
+  | "INVALID_COMPLETED_DOCUMENT_RESPONSE"
+  | "DOWNLOAD_GENERATED_PDF_FAILED"
+  | "INVALID_GENERATED_PDF"
+  | "COMPLETE_NOTIFICATION_JOB_FAILED"
+  | "FAIL_NOTIFICATION_JOB_FAILED"
+  | "NOTIFICATION_JOB_LEASE_LOST";
 
 export class DocumentDataError extends Error {
   readonly code: DocumentDataErrorCode;
@@ -226,6 +263,107 @@ function mapClaimedJob(value: unknown): ClaimedDocumentJob {
     templateVersion,
     attempts,
     leaseExpiresAt,
+  };
+}
+
+function mapRecipients(value: unknown): string[] | null {
+  if (!Array.isArray(value) || value.length === 0) return null;
+  const emailPattern = /^[^\s@,]+@[^\s@,]+\.[^\s@,]+$/u;
+  const recipients = value.filter(
+    (recipient): recipient is string => typeof recipient === "string",
+  );
+  if (
+    recipients.length !== value.length
+    || recipients.some(
+      (recipient) => recipient !== recipient.trim().toLowerCase()
+        || !emailPattern.test(recipient),
+    )
+    || new Set(recipients).size !== recipients.length
+  ) {
+    return null;
+  }
+  return recipients;
+}
+
+function mapClaimedNotificationJob(value: unknown): ClaimedNotificationJob {
+  if (!isRecord(value)) return documentDataError("INVALID_NOTIFICATION_JOB_RESPONSE");
+
+  const id = text(value.id);
+  const requestId = text(value.request_id);
+  const documentId = text(value.document_id);
+  const documentType = text(value.document_type);
+  const recipients = mapRecipients(value.recipients);
+  const subject = text(value.subject);
+  const attempts = positiveInteger(value.attempts);
+  const leaseExpiresAt = timestamp(value.lease_expires_at);
+  if (
+    !id
+    || !UUID_PATTERN.test(id)
+    || !requestId
+    || !UUID_PATTERN.test(requestId)
+    || !documentId
+    || !UUID_PATTERN.test(documentId)
+    || !documentType
+    || !DOCUMENT_KINDS.has(documentType as OfficialDocumentKind)
+    || !recipients
+    || !subject
+    || attempts === null
+    || !leaseExpiresAt
+  ) {
+    return documentDataError("INVALID_NOTIFICATION_JOB_RESPONSE");
+  }
+
+  return {
+    id,
+    requestId,
+    documentId,
+    documentType: documentType as OfficialDocumentKind,
+    recipients,
+    subject,
+    attempts,
+    leaseExpiresAt,
+  };
+}
+
+function mapCompletedDocument(value: unknown): CompletedGeneratedDocument {
+  if (!isRecord(value) || !isRecord(value.request)) {
+    return documentDataError("INVALID_COMPLETED_DOCUMENT_RESPONSE");
+  }
+
+  const id = text(value.id);
+  const requestId = text(value.request_id);
+  const documentType = text(value.document_type);
+  const requestNumber = positiveInteger(value.request.request_number);
+  const storagePath = text(value.storage_path);
+  const pathKind = documentType === "initial_request"
+    ? "initial-request"
+    : "final-report";
+  const expectedPath = requestId && documentType && storagePath
+    ? new RegExp(
+      `^requests/${requestId}/${pathKind}-v[a-z0-9][a-z0-9._-]{0,39}-[a-f0-9]{64}\\.pdf$`,
+      "u",
+    )
+    : null;
+  if (
+    !id
+    || !UUID_PATTERN.test(id)
+    || !requestId
+    || !UUID_PATTERN.test(requestId)
+    || !documentType
+    || !DOCUMENT_KINDS.has(documentType as OfficialDocumentKind)
+    || requestNumber === null
+    || !storagePath
+    || !expectedPath?.test(storagePath)
+  ) {
+    return documentDataError("INVALID_COMPLETED_DOCUMENT_RESPONSE");
+  }
+
+  return {
+    id,
+    requestId,
+    documentType: documentType as OfficialDocumentKind,
+    requestNumber,
+    storagePath,
   };
 }
 
@@ -397,6 +535,79 @@ export async function claimGeneratedDocumentJobs(
   }
 }
 
+export async function claimNotificationJobs(
+  input: ClaimDocumentJobsInput,
+  dependencies: Partial<DocumentDataDependencies> = {},
+): Promise<ClaimedNotificationJob[]> {
+  const supabase = clientFrom(dependencies);
+  try {
+    const { data, error } = await supabase.rpc("claim_notification_jobs", {
+      p_limit: input.batchSize,
+      p_lease_seconds: input.leaseSeconds,
+    });
+    if (error) return documentDataError("CLAIM_NOTIFICATIONS_FAILED");
+    if (!Array.isArray(data)) {
+      return documentDataError("INVALID_NOTIFICATION_JOB_RESPONSE");
+    }
+    return data.map(mapClaimedNotificationJob);
+  } catch (error) {
+    if (error instanceof DocumentDataError) throw error;
+    return documentDataError("CLAIM_NOTIFICATIONS_FAILED");
+  }
+}
+
+export async function loadCompletedGeneratedDocument(
+  documentId: string,
+  dependencies: Partial<DocumentDataDependencies> = {},
+): Promise<CompletedGeneratedDocument> {
+  if (!UUID_PATTERN.test(documentId)) {
+    return documentDataError("INVALID_COMPLETED_DOCUMENT_RESPONSE");
+  }
+  const supabase = clientFrom(dependencies);
+  try {
+    const { data, error } = await supabase
+      .from("generated_documents")
+      .select(`
+        id,
+        request_id,
+        document_type,
+        storage_path,
+        request:material_requests!inner(request_number)
+      `)
+      .eq("id", documentId)
+      .eq("status", "completed")
+      .maybeSingle();
+    if (error) return documentDataError("LOAD_COMPLETED_DOCUMENT_FAILED");
+    if (!data) return documentDataError("COMPLETED_DOCUMENT_NOT_FOUND");
+    return mapCompletedDocument(data);
+  } catch (error) {
+    if (error instanceof DocumentDataError) throw error;
+    return documentDataError("LOAD_COMPLETED_DOCUMENT_FAILED");
+  }
+}
+
+export async function downloadGeneratedPdf(
+  path: string,
+  dependencies: Partial<DocumentDataDependencies> = {},
+): Promise<Buffer> {
+  if (!/^requests\/[0-9a-f-]{36}\/[a-z0-9._-]+-[a-f0-9]{64}\.pdf$/iu.test(path)) {
+    return documentDataError("INVALID_GENERATED_PDF");
+  }
+  const supabase = clientFrom(dependencies);
+  try {
+    const { data, error } = await supabase.storage
+      .from(GENERATED_DOCUMENTS_BUCKET)
+      .download(path);
+    if (error || !data) return documentDataError("DOWNLOAD_GENERATED_PDF_FAILED");
+    const buffer = Buffer.from(await data.arrayBuffer());
+    if (buffer.length === 0) return documentDataError("INVALID_GENERATED_PDF");
+    return buffer;
+  } catch (error) {
+    if (error instanceof DocumentDataError) throw error;
+    return documentDataError("DOWNLOAD_GENERATED_PDF_FAILED");
+  }
+}
+
 export async function loadOfficialPdfSource(
   requestId: string,
   dependencies: Partial<DocumentDataDependencies> = {},
@@ -507,5 +718,45 @@ export async function failGeneratedDocumentJob(
   } catch (error) {
     if (error instanceof DocumentDataError) throw error;
     return documentDataError("FAIL_DOCUMENT_JOB_FAILED");
+  }
+}
+
+export async function completeNotificationJob(
+  input: CompleteNotificationJobInput,
+  dependencies: Partial<DocumentDataDependencies> = {},
+): Promise<void> {
+  const supabase = clientFrom(dependencies);
+  try {
+    const { data, error } = await supabase.rpc("complete_notification_job", {
+      p_job_id: input.jobId,
+      p_attempts: input.attempts,
+      p_provider_message_id: input.providerMessageId,
+    });
+    if (error) return documentDataError("COMPLETE_NOTIFICATION_JOB_FAILED");
+    if (data !== true) return documentDataError("NOTIFICATION_JOB_LEASE_LOST");
+  } catch (error) {
+    if (error instanceof DocumentDataError) throw error;
+    return documentDataError("COMPLETE_NOTIFICATION_JOB_FAILED");
+  }
+}
+
+export async function failNotificationJob(
+  input: FailNotificationJobInput,
+  dependencies: Partial<DocumentDataDependencies> = {},
+): Promise<void> {
+  const supabase = clientFrom(dependencies);
+  try {
+    const { data, error } = await supabase.rpc("fail_notification_job", {
+      p_job_id: input.jobId,
+      p_attempts: input.attempts,
+      p_error: input.error,
+      p_retry_at: input.retryAt,
+      p_terminal: input.terminal,
+    });
+    if (error) return documentDataError("FAIL_NOTIFICATION_JOB_FAILED");
+    if (data !== true) return documentDataError("NOTIFICATION_JOB_LEASE_LOST");
+  } catch (error) {
+    if (error instanceof DocumentDataError) throw error;
+    return documentDataError("FAIL_NOTIFICATION_JOB_FAILED");
   }
 }

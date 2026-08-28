@@ -3,18 +3,31 @@ import "server-only";
 import { createHash } from "node:crypto";
 
 import {
+  claimNotificationJobs,
   claimGeneratedDocumentJobs,
+  completeNotificationJob,
   completeGeneratedDocumentJob,
+  downloadGeneratedPdf,
+  failNotificationJob,
   failGeneratedDocumentJob,
+  loadCompletedGeneratedDocument,
   loadOfficialPdfSource,
   uploadGeneratedPdf,
+  type ClaimedNotificationJob,
   type ClaimedDocumentJob,
   type ClaimDocumentJobsInput,
+  type CompleteNotificationJobInput,
   type CompleteDocumentJobInput,
+  type CompletedGeneratedDocument,
+  type FailNotificationJobInput,
   type FailDocumentJobInput,
   type OfficialDocumentKind,
   type OfficialPdfSource,
 } from "../../data/documents.ts";
+import {
+  sendDocumentEmail,
+  type SendDocumentEmailInput,
+} from "../../email/resend.ts";
 import { getEmailConfig, getWorkerConfig } from "../../env/documents.ts";
 import { mapOfficialPdfDocument } from "../../pdf/mappers.ts";
 import type { PdfDocument } from "../../pdf/contracts.ts";
@@ -38,7 +51,7 @@ export type NotificationDetails = {
 
 export type DocumentWorkerFailureEvent = {
   jobId: string;
-  phase: "fail_document";
+  phase: "fail_document" | "fail_notification";
   attempt: number;
   errorCode: string;
 };
@@ -54,6 +67,25 @@ export type DocumentWorkerDependencies = {
   ) => NotificationDetails;
   completeDocument: (input: CompleteDocumentJobInput) => Promise<void>;
   failDocument: (input: FailDocumentJobInput) => Promise<void>;
+  reportFailure: (event: DocumentWorkerFailureEvent) => void;
+  now: () => Date;
+};
+
+type NotificationEmailInput = Omit<SendDocumentEmailInput, "apiKey" | "from">;
+
+export type NotificationWorkerDependencies = {
+  claimNotifications: (
+    input: ClaimDocumentJobsInput,
+  ) => Promise<ClaimedNotificationJob[]>;
+  loadCompletedDocument: (
+    documentId: string,
+  ) => Promise<CompletedGeneratedDocument>;
+  download: (path: string) => Promise<Buffer>;
+  sendEmail: (
+    input: NotificationEmailInput,
+  ) => Promise<{ providerMessageId: string }>;
+  completeNotification: (input: CompleteNotificationJobInput) => Promise<void>;
+  failNotification: (input: FailNotificationJobInput) => Promise<void>;
   reportFailure: (event: DocumentWorkerFailureEvent) => void;
   now: () => Date;
 };
@@ -180,6 +212,54 @@ function buildDependencies(
   };
 }
 
+async function defaultSendNotificationEmail(input: NotificationEmailInput) {
+  const { apiKey, from } = getEmailConfig();
+  return sendDocumentEmail({ ...input, apiKey, from });
+}
+
+function buildNotificationDependencies(
+  overrides: Partial<NotificationWorkerDependencies>,
+): NotificationWorkerDependencies {
+  return {
+    claimNotifications: claimNotificationJobs,
+    loadCompletedDocument: loadCompletedGeneratedDocument,
+    download: downloadGeneratedPdf,
+    sendEmail: defaultSendNotificationEmail,
+    completeNotification: completeNotificationJob,
+    failNotification: failNotificationJob,
+    reportFailure: (event) => {
+      console.error("Notification worker failure persistence failed", event);
+    },
+    now: () => new Date(),
+    ...overrides,
+  };
+}
+
+function notificationFilename(
+  kind: OfficialDocumentKind,
+  requestNumber: number,
+) {
+  const number = String(requestNumber).padStart(6, "0");
+  return kind === "initial_request"
+    ? `fabtek-richiesta-${number}.pdf`
+    : `fabtek-report-finale-${number}.pdf`;
+}
+
+function assertMatchingNotificationDocument(
+  job: ClaimedNotificationJob,
+  document: CompletedGeneratedDocument,
+) {
+  if (
+    document.id !== job.documentId
+    || document.requestId !== job.requestId
+    || document.documentType !== job.documentType
+  ) {
+    throw Object.assign(new Error("Documento notifica non valido."), {
+      code: "INVALID_NOTIFICATION_DOCUMENT",
+    });
+  }
+}
+
 export async function processDocumentJobs(
   options: DocumentJobOptions = {},
   dependencies: Partial<DocumentWorkerDependencies> = {},
@@ -237,6 +317,81 @@ export async function processDocumentJobs(
           resolvedDependencies.reportFailure({
             jobId: job.id,
             phase: "fail_document",
+            attempt: job.attempts,
+            errorCode: errorCode(failureError),
+          });
+        } catch {
+          // Reporting must not stop other leased jobs in the same batch.
+        }
+      }
+    }
+  }
+
+  return result;
+}
+
+export async function processNotificationJobs(
+  options: DocumentJobOptions = {},
+  dependencies: Partial<NotificationWorkerDependencies> = {},
+): Promise<JobBatchResult> {
+  const resolvedDependencies = buildNotificationDependencies(dependencies);
+  const claimOptions = resolveOptions(
+    options,
+    dependencies.claimNotifications !== undefined,
+  );
+  const jobs = await resolvedDependencies.claimNotifications(claimOptions);
+  const result: JobBatchResult = {
+    claimed: jobs.length,
+    completed: 0,
+    failed: 0,
+  };
+
+  for (const job of jobs) {
+    try {
+      const document = await resolvedDependencies.loadCompletedDocument(
+        job.documentId,
+      );
+      assertMatchingNotificationDocument(job, document);
+      const buffer = await resolvedDependencies.download(document.storagePath);
+      if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+        throw Object.assign(new Error("PDF notifica non valido."), {
+          code: "INVALID_GENERATED_PDF",
+        });
+      }
+      const { providerMessageId } = await resolvedDependencies.sendEmail({
+        recipients: job.recipients,
+        subject: job.subject,
+        attachment: {
+          filename: notificationFilename(
+            document.documentType,
+            document.requestNumber,
+          ),
+          buffer,
+        },
+        idempotencyKey: `document-notification/${job.id}`,
+      });
+      await resolvedDependencies.completeNotification({
+        jobId: job.id,
+        attempts: job.attempts,
+        providerMessageId,
+      });
+      result.completed += 1;
+    } catch (error) {
+      result.failed += 1;
+      const retry = getRetryDecision(job.attempts, resolvedDependencies.now());
+      try {
+        await resolvedDependencies.failNotification({
+          jobId: job.id,
+          attempts: job.attempts,
+          error: errorCode(error),
+          retryAt: retry.retryAt,
+          terminal: retry.terminal,
+        });
+      } catch (failureError) {
+        try {
+          resolvedDependencies.reportFailure({
+            jobId: job.id,
+            phase: "fail_notification",
             attempt: job.attempts,
             errorCode: errorCode(failureError),
           });
