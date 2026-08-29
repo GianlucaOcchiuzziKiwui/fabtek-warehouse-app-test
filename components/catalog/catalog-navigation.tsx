@@ -1,4 +1,5 @@
 import { EmptyState } from "@/components/shared/empty-state";
+import { CatalogIcon } from "@/components/catalog/catalog-icon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -16,54 +17,17 @@ import {
 import {
   ArrowLeft,
   Boxes,
-  Cable,
   Check,
   ChevronRight,
-  CircleDot,
-  CircleGauge,
-  Component,
-  Cylinder,
-  Droplets,
-  Factory,
-  FlaskConical,
   FolderTree,
-  Gauge,
-  GitBranch,
   PackageSearch,
-  Plug,
   Search,
-  Snowflake,
-  Sparkles,
-  Waves,
-  Wind,
-  Wrench,
   X,
   type LucideIcon,
 } from "lucide-react";
 import Form from "next/form";
 import Link from "next/link";
 import type { ReactNode } from "react";
-
-const TILE_ICONS: Record<CatalogIconKey, LucideIcon> = {
-  boxes: Boxes,
-  cable: Cable,
-  "circle-dot": CircleDot,
-  "circle-gauge": CircleGauge,
-  component: Component,
-  cylinder: Cylinder,
-  droplets: Droplets,
-  factory: Factory,
-  "flask-conical": FlaskConical,
-  gauge: Gauge,
-  "git-branch": GitBranch,
-  "package-search": PackageSearch,
-  plug: Plug,
-  snowflake: Snowflake,
-  sparkles: Sparkles,
-  waves: Waves,
-  wind: Wind,
-  wrench: Wrench,
-};
 
 function CatalogTile({
   href,
@@ -78,8 +42,6 @@ function CatalogTile({
   title: string;
   context?: string;
 }) {
-  const Icon = TILE_ICONS[iconKey];
-
   return (
     <Link
       href={href}
@@ -89,7 +51,7 @@ function CatalogTile({
         data-catalog-tile-icon
         className={`flex items-center justify-center bg-linear-to-br from-brand-navy to-brand-navy-deep text-white ${kind === "category" ? "h-24" : "h-20"}`}
       >
-        <Icon aria-hidden="true" className={kind === "category" ? "size-11" : "size-9"} strokeWidth={1.7} />
+        <CatalogIcon iconKey={iconKey} className={kind === "category" ? "size-11" : "size-9"} strokeWidth={1.7} />
       </span>
       <span className="flex min-h-18 items-center justify-between gap-3 px-3 py-3">
         <span className="min-w-0">
