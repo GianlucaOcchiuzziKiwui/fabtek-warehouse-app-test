@@ -344,4 +344,8 @@ test("rejects duplicate or malformed variant category IDs", () => {
     ...valid,
     categoryIds: [CATEGORY_ID, "not-a-uuid"],
   });
+  assertInvalid(parseVariantInput, {
+    ...valid,
+    categoryIds: new Array(1),
+  });
 });

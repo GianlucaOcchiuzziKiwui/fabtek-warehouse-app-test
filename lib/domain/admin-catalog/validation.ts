@@ -184,7 +184,7 @@ export function parseVariantInput(value: unknown): VariantInput {
   if (!Array.isArray(input.categoryIds) || input.categoryIds.length === 0) {
     invalid();
   }
-  const categoryIds = input.categoryIds.map(uuid);
+  const categoryIds = Array.from(input.categoryIds, uuid);
   if (new Set(categoryIds).size !== categoryIds.length) invalid();
 
   return {
