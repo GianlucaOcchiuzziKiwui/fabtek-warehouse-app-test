@@ -194,17 +194,20 @@ export function CatalogVariantForm({
 
       <fieldset
         aria-describedby={`catalog-variant-categories-help${errorId ? ` ${errorId}` : ""}`}
-        className="space-y-3 rounded-xl border border-input p-3"
+        className="min-w-0 space-y-3 rounded-xl border border-input p-3"
       >
         <legend className="px-1 text-sm font-medium text-foreground">Categorie</legend>
-        <p id="catalog-variant-categories-help" className="text-xs text-muted-foreground">
+        <p
+          id="catalog-variant-categories-help"
+          className="min-w-0 break-words text-xs text-muted-foreground [overflow-wrap:anywhere]"
+        >
           Seleziona almeno una categoria. {selectedSummary}
           {selectedCategories.length > 0
             ? `: ${selectedCategories.map((category) => category.name).join(", ")}`
             : "."}
         </p>
         {options.categories.length > 0 ? (
-          <div className="grid max-h-48 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
+          <div className="grid min-w-0 max-h-48 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
             {options.categories.map((category, index) => {
               const checked = categoryIds.includes(category.id);
               const categoryInputId = `catalog-variant-category-${category.id}`;
@@ -212,7 +215,7 @@ export function CatalogVariantForm({
                 <label
                   key={category.id}
                   htmlFor={categoryInputId}
-                  className="flex min-h-10 cursor-pointer items-center gap-3 rounded-lg border border-border px-3 py-2 text-sm focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/25 has-checked:border-primary has-checked:bg-primary/5"
+                  className="flex min-h-10 min-w-0 cursor-pointer items-center gap-3 rounded-lg border border-border px-3 py-2 text-sm focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/25 has-checked:border-primary has-checked:bg-primary/5"
                 >
                   <input
                     id={categoryInputId}
@@ -225,7 +228,9 @@ export function CatalogVariantForm({
                     onChange={(event) => onCategoryChange(category.id, event.target.checked)}
                     className="size-4 shrink-0 accent-primary"
                   />
-                  <span>{category.isActive ? category.name : `${category.name} (inattiva)`}</span>
+                  <span className="min-w-0 break-words [overflow-wrap:anywhere]">
+                    {category.isActive ? category.name : `${category.name} (inattiva)`}
+                  </span>
                 </label>
               );
             })}
@@ -253,7 +258,10 @@ export function CatalogVariantForm({
             aria-describedby={errorId}
           />
         </div>
-        <div className="flex min-h-10 items-center gap-3 rounded-lg border border-input px-3 sm:self-end">
+        <label
+          htmlFor="catalog-variant-track-inventory"
+          className="flex min-h-10 cursor-pointer items-center gap-3 rounded-lg border border-input px-3 sm:self-end"
+        >
           <input
             id="catalog-variant-track-inventory"
             type="checkbox"
@@ -262,9 +270,12 @@ export function CatalogVariantForm({
             onChange={(event) => onInventoryChange(event.target.checked)}
             className="size-4 accent-primary"
           />
-          <Label htmlFor="catalog-variant-track-inventory">Traccia inventario</Label>
-        </div>
-        <div className="flex min-h-10 items-center gap-3 rounded-lg border border-input px-3 sm:self-end">
+          <span className="text-sm font-medium">Traccia inventario</span>
+        </label>
+        <label
+          htmlFor="catalog-variant-active"
+          className="flex min-h-10 cursor-pointer items-center gap-3 rounded-lg border border-input px-3 sm:self-end"
+        >
           <input
             id="catalog-variant-active"
             type="checkbox"
@@ -273,8 +284,8 @@ export function CatalogVariantForm({
             onChange={(event) => onActiveChange(event.target.checked)}
             className="size-4 accent-primary"
           />
-          <Label htmlFor="catalog-variant-active">Attiva</Label>
-        </div>
+          <span className="text-sm font-medium">Attiva</span>
+        </label>
       </div>
 
       {error ? (
@@ -289,8 +300,10 @@ export function CatalogVariantForm({
           type="submit"
           disabled={pending || options.categories.length === 0}
         >
-          {pending ? <Loader2 aria-hidden="true" className="animate-spin" /> : null}
-          {pending ? "Salvataggio..." : entity ? "Salva modifiche" : "Crea variante"}
+          {pending ? (
+            <Loader2 aria-hidden="true" className="animate-spin motion-reduce:animate-none" />
+          ) : null}
+          {pending ? "Salvataggio…" : entity ? "Salva modifiche" : "Crea variante"}
         </Button>
       </DialogFooter>
     </form>

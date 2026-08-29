@@ -431,6 +431,108 @@ test("variant form exposes every editable field and visibly selected categories"
   assert.match(markup, /<label[^>]*for="catalog-variant-active"/u);
 });
 
+test("variant toggles make the complete 40px row their checkbox label", () => {
+  const { CatalogVariantForm } = loadProjectModule(
+    "components/admin/catalog/catalog-variant-dialog.tsx",
+    DIALOG_OVERRIDES,
+  );
+  const markup = renderToStaticMarkup(React.createElement(CatalogVariantForm, {
+    entity: null,
+    options: { categories: [], families: [], components: [], unitsOfMeasure: [] },
+    categoryIds: [],
+    isActive: true,
+    trackInventory: false,
+    pending: false,
+    error: null,
+    onCategoryChange() {},
+    onActiveChange() {},
+    onInventoryChange() {},
+    onSubmit() {},
+    onCancel() {},
+  }));
+
+  for (const id of ["catalog-variant-track-inventory", "catalog-variant-active"]) {
+    const label = markup.match(
+      new RegExp(`<label[^>]*for="${id}"[^>]*class="[^"]*min-h-10[^"]*"[^>]*>[\\s\\S]*?</label>`, "u"),
+    )?.[0] ?? "";
+    assert.match(label, new RegExp(`<input[^>]*id="${id}"[^>]*type="checkbox"`, "u"));
+    assert.doesNotMatch(label, /<(?:button|a|select|textarea)\b/u);
+  }
+});
+
+test("variant category names without spaces cannot widen the mobile dialog", () => {
+  const { CatalogVariantForm } = loadProjectModule(
+    "components/admin/catalog/catalog-variant-dialog.tsx",
+    DIALOG_OVERRIDES,
+  );
+  const longName = "A".repeat(160);
+  const markup = renderToStaticMarkup(React.createElement(CatalogVariantForm, {
+    entity: null,
+    options: {
+      categories: [{ id: CATEGORY_ID, name: longName, isActive: true }],
+      families: [],
+      components: [],
+      unitsOfMeasure: [],
+    },
+    categoryIds: [CATEGORY_ID],
+    isActive: true,
+    trackInventory: false,
+    pending: false,
+    error: null,
+    onCategoryChange() {},
+    onActiveChange() {},
+    onInventoryChange() {},
+    onSubmit() {},
+    onCancel() {},
+  }));
+
+  assert.match(markup, new RegExp(`>${longName}<`, "u"));
+  assert.match(
+    markup,
+    /id="catalog-variant-categories-help" class="[^"]*min-w-0[^"]*break-words[^"]*\[overflow-wrap:anywhere\]/u,
+  );
+  assert.match(markup, /class="[^"]*grid[^"]*min-w-0[^"]*overflow-y-auto/u);
+  assert.match(
+    markup,
+    /for="catalog-variant-category-[^"]+" class="[^"]*min-w-0[^"]*"/u,
+  );
+  assert.match(
+    markup,
+    /<span class="[^"]*min-w-0[^"]*break-words[^"]*\[overflow-wrap:anywhere\][^"]*">A{160}<\/span>/u,
+  );
+});
+
+test("variant pending state stops spinner motion and uses a Unicode ellipsis", () => {
+  const { CatalogVariantForm } = loadProjectModule(
+    "components/admin/catalog/catalog-variant-dialog.tsx",
+    DIALOG_OVERRIDES,
+  );
+  const markup = renderToStaticMarkup(React.createElement(CatalogVariantForm, {
+    entity: null,
+    options: {
+      categories: [{ id: CATEGORY_ID, name: "Processo", isActive: true }],
+      families: [],
+      components: [],
+      unitsOfMeasure: [],
+    },
+    categoryIds: [CATEGORY_ID],
+    isActive: true,
+    trackInventory: false,
+    pending: true,
+    error: null,
+    onCategoryChange() {},
+    onActiveChange() {},
+    onInventoryChange() {},
+    onSubmit() {},
+    onCancel() {},
+  }));
+  const submitButton = markup.match(/<button[^>]*type="submit"[^>]*>[\s\S]*?<\/button>/u)?.[0] ?? "";
+
+  assert.match(submitButton, /class="[^"]*animate-spin[^"]*motion-reduce:animate-none/u);
+  assert.match(submitButton, /Salvataggio…/u);
+  assert.doesNotMatch(submitButton, /Salvataggio\.\.\./u);
+});
+
 test("successful entity save shows a toast and closes the controlled dialog", async () => {
   const events = [];
   let transition;
