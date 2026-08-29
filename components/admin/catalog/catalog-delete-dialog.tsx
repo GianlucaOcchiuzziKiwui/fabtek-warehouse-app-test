@@ -2,6 +2,7 @@
 
 import {
   AlertDialog,
+  AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
@@ -15,7 +16,7 @@ import type {
   CatalogMutationResult,
 } from "@/lib/domain/admin-catalog/contracts";
 import { Loader2 } from "lucide-react";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition, type RefObject } from "react";
 import { toast } from "sonner";
 
 type CatalogDeleteDialogBodyProps = {
@@ -24,6 +25,7 @@ type CatalogDeleteDialogBodyProps = {
   referenced: boolean;
   pending: boolean;
   error: string | null;
+  cancelRef?: RefObject<HTMLButtonElement | null>;
   onCancel: () => void;
   onConfirm: () => void;
 };
@@ -34,6 +36,7 @@ export function CatalogDeleteDialogBody({
   referenced,
   pending,
   error,
+  cancelRef,
   onCancel,
   onConfirm,
 }: CatalogDeleteDialogBodyProps) {
@@ -71,7 +74,17 @@ export function CatalogDeleteDialogBody({
       {error ? <p role="alert" aria-live="polite" className="text-sm text-destructive">{error}</p> : null}
 
       <AlertDialogFooter>
-        <Button type="button" variant="outline" onClick={onCancel}>Annulla</Button>
+        <AlertDialogCancel asChild>
+          <Button
+            ref={cancelRef}
+            type="button"
+            variant="outline"
+            disabled={pending}
+            onClick={onCancel}
+          >
+            Annulla
+          </Button>
+        </AlertDialogCancel>
         <Button
           type="button"
           variant={deactivating ? "default" : "destructive"}
@@ -93,6 +106,7 @@ type CatalogDeleteDialogProps = {
   entityId: string;
   entityName: string;
   mode: "delete" | "deactivate";
+  blocked?: boolean;
   deleteEntity: (input: unknown) => Promise<ActionResult<CatalogMutationResult>>;
   setActive: (input: unknown) => Promise<ActionResult<CatalogMutationResult>>;
 };
@@ -104,12 +118,15 @@ export function CatalogDeleteDialog({
   entityId,
   entityName,
   mode,
+  blocked = false,
   deleteEntity,
   setActive,
 }: CatalogDeleteDialogProps) {
   const [referenced, setReferenced] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const busy = pending || blocked;
 
   useEffect(() => {
     setReferenced(false);
@@ -117,10 +134,11 @@ export function CatalogDeleteDialog({
   }, [entityId, mode, open]);
 
   function close() {
-    if (!pending) onOpenChange(false);
+    if (!busy) onOpenChange(false);
   }
 
   function confirm() {
+    if (busy) return;
     startTransition(async () => {
       setError(null);
       try {
@@ -146,14 +164,20 @@ export function CatalogDeleteDialog({
   }
 
   return (
-    <AlertDialog open={open} onOpenChange={(nextOpen) => !pending && onOpenChange(nextOpen)}>
-      <AlertDialogContent>
+    <AlertDialog open={open} onOpenChange={(nextOpen) => !busy && onOpenChange(nextOpen)}>
+      <AlertDialogContent
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          cancelRef.current?.focus();
+        }}
+      >
         <CatalogDeleteDialogBody
           entityName={entityName}
           mode={mode}
           referenced={referenced}
-          pending={pending}
+          pending={busy}
           error={error}
+          cancelRef={cancelRef}
           onCancel={close}
           onConfirm={confirm}
         />

@@ -234,6 +234,11 @@ const DIALOG_OVERRIDES = new Map([
     AlertDialogTitle: ({ children }) => React.createElement("h2", null, children),
     AlertDialogDescription: ({ children }) => React.createElement("p", null, children),
     AlertDialogFooter: ({ children }) => React.createElement("footer", null, children),
+    AlertDialogCancel: ({ children }) => React.createElement(
+      "span",
+      { "data-alert-dialog-cancel": "" },
+      children,
+    ),
   }],
 ]);
 
@@ -438,6 +443,7 @@ test("referenced delete response changes the primary action to an explicit deact
 
   assert.match(markup, /non può essere eliminata perché è utilizzata/u);
   assert.match(markup, /Puoi disattivarla/u);
+  assert.match(markup, /data-alert-dialog-cancel=""/u);
   assert.match(markup, /<button[^>]*type="button"[^>]*>Annulla/u);
   assert.match(markup, /<button[^>]*type="button"[^>]*>Disattiva/u);
   assert.doesNotMatch(markup, />Elimina</u);
@@ -498,4 +504,415 @@ test("catalog management exposes group CRUD actions in desktop and mobile layout
   assert.equal((markup.match(/>Elimina</gu) ?? []).length, 2);
   assert.match(markup, /class="[^"]*hidden[^"]*md:block/u);
   assert.match(markup, /class="[^"]*md:hidden/u);
+});
+
+function findElement(node, predicate) {
+  if (!React.isValidElement(node)) return null;
+  if (predicate(node)) return node;
+  for (const child of React.Children.toArray(node.props.children)) {
+    const match = findElement(child, predicate);
+    if (match) return match;
+  }
+  return null;
+}
+
+function createHookHarness() {
+  const slots = [];
+  const transitions = [];
+  let cursor = 0;
+  let effects = [];
+
+  function nextSlot(initialValue) {
+    const index = cursor++;
+    if (!(index in slots)) slots[index] = initialValue;
+    return [index, slots[index]];
+  }
+
+  const react = {
+    ...React,
+    useState(initialValue) {
+      const [index, value] = nextSlot(
+        typeof initialValue === "function" ? initialValue() : initialValue,
+      );
+      return [value, (nextValue) => {
+        slots[index] = typeof nextValue === "function"
+          ? nextValue(slots[index])
+          : nextValue;
+      }];
+    },
+    useRef(initialValue) {
+      const [index] = nextSlot({ current: initialValue });
+      return slots[index];
+    },
+    useEffect(callback, dependencies) {
+      const [index, previous] = nextSlot(undefined);
+      const changed = previous === undefined
+        || dependencies === undefined
+        || dependencies.some((value, dependencyIndex) => !Object.is(value, previous[dependencyIndex]));
+      slots[index] = dependencies;
+      if (changed) effects.push(callback);
+    },
+    useTransition() {
+      nextSlot(null);
+      return [false, (callback) => {
+        const transition = Promise.resolve(callback());
+        transitions.push(transition);
+      }];
+    },
+  };
+
+  return {
+    react,
+    transitions,
+    render(Component, props) {
+      cursor = 0;
+      effects = [];
+      const tree = Component(props);
+      const currentEffects = effects;
+      return {
+        tree,
+        flushEffects() {
+          for (const effect of currentEffects) effect();
+        },
+      };
+    },
+  };
+}
+
+function managementFixture(tab, item) {
+  return {
+    query: { tab, query: "", status: "tutti", page: 1 },
+    result: { page: 1, pageSize: 20, total: 1, items: [item] },
+    formOptions: { categories: [], families: [], components: [], unitsOfMeasure: [] },
+  };
+}
+
+test("open editor keeps its originating entity across Back/Forward and then resets", async () => {
+  const harness = createHookHarness();
+  const calls = [];
+  function Link({ href, children, ...props }) {
+    return React.createElement("a", { href, ...props }, children);
+  }
+  function EntityDialog() { return null; }
+  function DeleteDialog() { return null; }
+  const overrides = new Map([
+    ["react", harness.react],
+    ["next/link", Link],
+    ["@/app/(app)/admin/catalogo/actions", {
+      async saveCategoryAction(input) {
+        calls.push(["save-category", input]);
+        return { ok: true, data: { id: FAMILY_ID } };
+      },
+      async saveFamilyAction(input) {
+        calls.push(["save-family", input]);
+        return { ok: true, data: { id: FAMILY_ID } };
+      },
+      async saveComponentAction() { return { ok: true, data: { id: FAMILY_ID } }; },
+      async deleteCatalogEntityAction() { return { ok: true, data: { id: FAMILY_ID } }; },
+      async setCatalogEntityActiveAction() { return { ok: true, data: { id: FAMILY_ID } }; },
+    }],
+    ["@/components/admin/catalog/catalog-entity-dialog", { CatalogEntityDialog: EntityDialog }],
+    ["@/components/admin/catalog/catalog-delete-dialog", { CatalogDeleteDialog: DeleteDialog }],
+  ]);
+  const { CatalogManagement } = loadProjectModule(
+    "components/admin/catalog/catalog-management.tsx",
+    overrides,
+  );
+  const category = {
+    kind: "categoria",
+    id: FAMILY_ID,
+    code: "CAT-01",
+    name: "Pompe",
+    subtitle: null,
+    iconKey: "factory",
+    sortOrder: 1,
+    isActive: true,
+  };
+  const familyWithSameId = {
+    kind: "famiglia",
+    id: FAMILY_ID,
+    sourceCode: "F-01",
+    name: "Valvole",
+    subtitle: null,
+    iconKey: "wrench",
+    sortOrder: 1,
+    isActive: true,
+  };
+
+  let rendered = harness.render(CatalogManagement, managementFixture("categorie", category));
+  rendered.flushEffects();
+  let rows = findElement(rendered.tree, (element) => element.type.name === "CatalogRows");
+  rows.props.onEdit(category);
+  rendered = harness.render(CatalogManagement, managementFixture("categorie", category));
+  rendered.flushEffects();
+  let dialog = findElement(rendered.tree, (element) => element.type === EntityDialog);
+  assert.equal(dialog.props.open, true);
+  assert.equal(dialog.props.entityType, "categorie");
+
+  rendered = harness.render(
+    CatalogManagement,
+    managementFixture("famiglie", familyWithSameId),
+  );
+  dialog = findElement(rendered.tree, (element) => element.type === EntityDialog);
+  assert.equal(dialog.props.entityType, "categorie");
+  await dialog.props.save({ id: FAMILY_ID, name: "Pompe aggiornate" });
+  assert.deepEqual(calls, [[
+    "save-category",
+    { id: FAMILY_ID, name: "Pompe aggiornate" },
+  ]]);
+
+  rendered.flushEffects();
+  rendered = harness.render(
+    CatalogManagement,
+    managementFixture("famiglie", familyWithSameId),
+  );
+  dialog = findElement(rendered.tree, (element) => element.type === EntityDialog);
+  assert.equal(dialog, null);
+
+  rows = findElement(rendered.tree, (element) => element.type.name === "CatalogRows");
+  rows.props.onEdit(familyWithSameId);
+  rendered = harness.render(
+    CatalogManagement,
+    managementFixture("famiglie", familyWithSameId),
+  );
+  rendered.flushEffects();
+  const searchedFixture = managementFixture("famiglie", familyWithSameId);
+  searchedFixture.query.query = "valvole";
+  rendered = harness.render(CatalogManagement, searchedFixture);
+  dialog = findElement(rendered.tree, (element) => element.type === EntityDialog);
+  assert.equal(dialog.props.entityType, "famiglie");
+  rendered.flushEffects();
+  rendered = harness.render(CatalogManagement, searchedFixture);
+  assert.equal(
+    findElement(rendered.tree, (element) => element.type === EntityDialog),
+    null,
+  );
+});
+
+test("delete confirmation keeps its originating table across a query change", async () => {
+  const harness = createHookHarness();
+  const calls = [];
+  function Link({ href, children, ...props }) {
+    return React.createElement("a", { href, ...props }, children);
+  }
+  function EntityDialog() { return null; }
+  function DeleteDialog() { return null; }
+  const overrides = new Map([
+    ["react", harness.react],
+    ["next/link", Link],
+    ["@/app/(app)/admin/catalogo/actions", {
+      async saveCategoryAction() { return { ok: true, data: { id: FAMILY_ID } }; },
+      async saveFamilyAction() { return { ok: true, data: { id: FAMILY_ID } }; },
+      async saveComponentAction() { return { ok: true, data: { id: FAMILY_ID } }; },
+      async deleteCatalogEntityAction(input) {
+        calls.push(input);
+        return { ok: true, data: { id: FAMILY_ID } };
+      },
+      async setCatalogEntityActiveAction() { return { ok: true, data: { id: FAMILY_ID } }; },
+    }],
+    ["@/components/admin/catalog/catalog-entity-dialog", { CatalogEntityDialog: EntityDialog }],
+    ["@/components/admin/catalog/catalog-delete-dialog", { CatalogDeleteDialog: DeleteDialog }],
+  ]);
+  const { CatalogManagement } = loadProjectModule(
+    "components/admin/catalog/catalog-management.tsx",
+    overrides,
+  );
+  const category = {
+    kind: "categoria",
+    id: FAMILY_ID,
+    code: "CAT-01",
+    name: "Pompe",
+    subtitle: null,
+    iconKey: "factory",
+    sortOrder: 1,
+    isActive: true,
+  };
+  const family = {
+    kind: "famiglia",
+    id: FAMILY_ID,
+    sourceCode: "F-01",
+    name: "Valvole",
+    subtitle: null,
+    iconKey: "wrench",
+    sortOrder: 1,
+    isActive: true,
+  };
+
+  let rendered = harness.render(CatalogManagement, managementFixture("categorie", category));
+  rendered.flushEffects();
+  let rows = findElement(rendered.tree, (element) => element.type.name === "CatalogRows");
+  rows.props.onDelete(category);
+  rendered = harness.render(CatalogManagement, managementFixture("categorie", category));
+  rendered.flushEffects();
+  rendered = harness.render(CatalogManagement, managementFixture("famiglie", family));
+  const confirmation = findElement(rendered.tree, (element) => element.type === DeleteDialog);
+  assert.equal(confirmation.props.entity, "categorie");
+  await confirmation.props.deleteEntity({
+    entity: confirmation.props.entity,
+    id: confirmation.props.entityId,
+  });
+  assert.deepEqual(calls, [{ entity: "categorie", id: FAMILY_ID }]);
+
+  rendered.flushEffects();
+  rendered = harness.render(CatalogManagement, managementFixture("famiglie", family));
+  assert.equal(findElement(rendered.tree, (element) => element.type === DeleteDialog), null);
+});
+
+test("one pending activation blocks a second activation and stale edit", async () => {
+  const harness = createHookHarness();
+  const activationCalls = [];
+  let resolveActivation;
+  const pendingActivation = new Promise((resolve) => { resolveActivation = resolve; });
+  function Link({ href, children, ...props }) {
+    return React.createElement("a", { href, ...props }, children);
+  }
+  function EntityDialog() { return null; }
+  const overrides = new Map([
+    ["react", harness.react],
+    ["next/link", Link],
+    ["@/app/(app)/admin/catalogo/actions", {
+      async saveCategoryAction() { return { ok: true, data: { id: FAMILY_ID } }; },
+      async saveFamilyAction() { return { ok: true, data: { id: FAMILY_ID } }; },
+      async saveComponentAction() { return { ok: true, data: { id: FAMILY_ID } }; },
+      async deleteCatalogEntityAction() { return { ok: true, data: { id: FAMILY_ID } }; },
+      async setCatalogEntityActiveAction(input) {
+        activationCalls.push(input);
+        return pendingActivation;
+      },
+    }],
+    ["@/components/admin/catalog/catalog-entity-dialog", { CatalogEntityDialog: EntityDialog }],
+    ["@/components/admin/catalog/catalog-delete-dialog", { CatalogDeleteDialog() { return null; } }],
+  ]);
+  const { CatalogManagement } = loadProjectModule(
+    "components/admin/catalog/catalog-management.tsx",
+    overrides,
+  );
+  const first = {
+    kind: "categoria",
+    id: FAMILY_ID,
+    code: "CAT-01",
+    name: "Pompe",
+    subtitle: null,
+    iconKey: "factory",
+    sortOrder: 1,
+    isActive: false,
+  };
+  const second = { ...first, id: "20000000-0000-4000-8000-000000000020", code: "CAT-02" };
+  const props = {
+    ...managementFixture("categorie", first),
+    result: { page: 1, pageSize: 20, total: 2, items: [first, second] },
+  };
+
+  let rendered = harness.render(CatalogManagement, props);
+  rendered.flushEffects();
+  let rows = findElement(rendered.tree, (element) => element.type.name === "CatalogRows");
+  rows.props.onToggle(first);
+  rows.props.onToggle(second);
+  rows.props.onEdit(second);
+  assert.deepEqual(activationCalls, [{ entity: "categorie", id: FAMILY_ID, isActive: true }]);
+
+  rendered = harness.render(CatalogManagement, props);
+  rows = findElement(rendered.tree, (element) => element.type.name === "CatalogRows");
+  assert.equal(rows.props.mutationPending, true);
+  const expandedRows = rows.type(rows.props);
+  const markup = renderToStaticMarkup(expandedRows);
+  const actionButtons = [...markup.matchAll(/<button[^>]*>[\s\S]*?<\/button>/gu)]
+    .map(([button]) => button)
+    .filter((button) => /(?:Modifica|Attiva|Elimina)<\/button>/u.test(button));
+  assert.equal(actionButtons.length, 12);
+  assert.equal(actionButtons.every((button) => /\sdisabled=""/u.test(button)), true);
+  const dialog = findElement(rendered.tree, (element) => element.type === EntityDialog);
+  assert.equal(dialog, null);
+
+  resolveActivation({ ok: true, data: { id: FAMILY_ID } });
+  await Promise.all(harness.transitions);
+});
+
+test("delete dialog marks its cancel target and explicitly focuses it on open", () => {
+  const events = [];
+  const cancelButton = { focus() { events.push("focus"); } };
+  const fakeReact = {
+    ...React,
+    useEffect() {},
+    useRef() { return { current: cancelButton }; },
+    useState(initialValue) { return [initialValue, () => {}]; },
+    useTransition() { return [false, () => {}]; },
+  };
+  function AlertDialog({ children }) { return children; }
+  function AlertDialogContent({ children }) { return children; }
+  const overrides = new Map([
+    ["react", fakeReact],
+    ["@/components/ui/alert-dialog", {
+      AlertDialog,
+      AlertDialogContent,
+      AlertDialogHeader: ({ children }) => children,
+      AlertDialogTitle: ({ children }) => children,
+      AlertDialogDescription: ({ children }) => children,
+      AlertDialogFooter: ({ children }) => children,
+      AlertDialogCancel: ({ children }) => children,
+    }],
+  ]);
+  const { CatalogDeleteDialog } = loadProjectModule(
+    "components/admin/catalog/catalog-delete-dialog.tsx",
+    overrides,
+  );
+  const tree = CatalogDeleteDialog({
+    open: true,
+    onOpenChange() {},
+    entity: "categorie",
+    entityId: FAMILY_ID,
+    entityName: "Pompe",
+    mode: "delete",
+    async deleteEntity() { return { ok: true, data: { id: FAMILY_ID } }; },
+    async setActive() { return { ok: true, data: { id: FAMILY_ID } }; },
+  });
+  const content = tree.props.children;
+  content.props.onOpenAutoFocus({ preventDefault() { events.push("prevent-default"); } });
+
+  assert.deepEqual(events, ["prevent-default", "focus"]);
+});
+
+test("delete dialog cannot close through cancel while its mutation is pending", () => {
+  const closes = [];
+  const fakeReact = {
+    ...React,
+    useEffect() {},
+    useRef() { return { current: null }; },
+    useState(initialValue) { return [initialValue, () => {}]; },
+    useTransition() { return [true, () => {}]; },
+  };
+  function AlertDialog({ children }) { return children; }
+  function AlertDialogContent({ children }) { return children; }
+  const overrides = new Map([
+    ["react", fakeReact],
+    ["@/components/ui/alert-dialog", {
+      AlertDialog,
+      AlertDialogContent,
+      AlertDialogHeader: ({ children }) => children,
+      AlertDialogTitle: ({ children }) => children,
+      AlertDialogDescription: ({ children }) => children,
+      AlertDialogFooter: ({ children }) => children,
+      AlertDialogCancel: ({ children }) => children,
+    }],
+  ]);
+  const { CatalogDeleteDialog } = loadProjectModule(
+    "components/admin/catalog/catalog-delete-dialog.tsx",
+    overrides,
+  );
+  const tree = CatalogDeleteDialog({
+    open: true,
+    onOpenChange(open) { closes.push(open); },
+    entity: "categorie",
+    entityId: FAMILY_ID,
+    entityName: "Pompe",
+    mode: "delete",
+    async deleteEntity() { return { ok: true, data: { id: FAMILY_ID } }; },
+    async setActive() { return { ok: true, data: { id: FAMILY_ID } }; },
+  });
+  tree.props.onOpenChange(false);
+  const body = tree.props.children.props.children;
+  assert.equal(body.props.pending, true);
+  body.props.onCancel();
+
+  assert.deepEqual(closes, []);
 });

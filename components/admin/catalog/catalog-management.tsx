@@ -19,7 +19,12 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { AdminCatalogListQuery, AdminCatalogTab } from "@/lib/domain/admin-catalog/contracts";
+import type { ActionResult } from "@/lib/domain/action-result";
+import type {
+  AdminCatalogListQuery,
+  AdminCatalogTab,
+  CatalogMutationResult,
+} from "@/lib/domain/admin-catalog/contracts";
 import type {
   AdminCatalogFormOptions,
   AdminCatalogPage,
@@ -27,7 +32,7 @@ import type {
 } from "@/lib/data/admin-catalog";
 import { Loader2, Plus, RotateCcw, Search } from "lucide-react";
 import Link from "next/link";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 const TAB_CONTENT: Record<AdminCatalogTab, {
@@ -197,15 +202,23 @@ function entityName(item: AdminCatalogRow) {
   return item.kind === "variante" ? item.fabtekCode : item.name;
 }
 
+function entityTypeForItem(item: EditableCatalogEntity): EditableCatalogEntityType {
+  if (item.kind === "categoria") return "categorie";
+  if (item.kind === "famiglia") return "famiglie";
+  return "componenti";
+}
+
 function RowActions({
   item,
   pending,
+  showProgress,
   onEdit,
   onToggle,
   onDelete,
 }: {
   item: AdminCatalogRow;
   pending: boolean;
+  showProgress: boolean;
   onEdit: (item: EditableCatalogEntity) => void;
   onToggle: (item: EditableCatalogEntity) => void;
   onDelete: (item: EditableCatalogEntity) => void;
@@ -213,7 +226,13 @@ function RowActions({
   if (item.kind === "variante") return null;
   return (
     <div className="flex flex-wrap gap-2 md:flex-col md:items-stretch">
-      <Button type="button" variant="outline" className="px-3" onClick={() => onEdit(item)}>
+      <Button
+        type="button"
+        variant="outline"
+        className="px-3"
+        disabled={pending}
+        onClick={() => onEdit(item)}
+      >
         Modifica
       </Button>
       <Button
@@ -223,10 +242,16 @@ function RowActions({
         disabled={pending}
         onClick={() => onToggle(item)}
       >
-        {pending ? <Loader2 aria-hidden="true" className="animate-spin" /> : null}
+        {showProgress ? <Loader2 aria-hidden="true" className="animate-spin" /> : null}
         {item.isActive ? "Disattiva" : "Attiva"}
       </Button>
-      <Button type="button" variant="destructive" className="px-3" onClick={() => onDelete(item)}>
+      <Button
+        type="button"
+        variant="destructive"
+        className="px-3"
+        disabled={pending}
+        onClick={() => onDelete(item)}
+      >
         Elimina
       </Button>
     </div>
@@ -235,13 +260,15 @@ function RowActions({
 
 function CatalogRows({
   result,
-  activatingId,
+  mutationPending,
+  mutationItemId,
   onEdit,
   onToggle,
   onDelete,
 }: {
   result: AdminCatalogPage;
-  activatingId: string | null;
+  mutationPending: boolean;
+  mutationItemId: string | null;
   onEdit: (item: EditableCatalogEntity) => void;
   onToggle: (item: EditableCatalogEntity) => void;
   onDelete: (item: EditableCatalogEntity) => void;
@@ -277,7 +304,8 @@ function CatalogRows({
                   <td className="px-4 py-4 align-top">
                     <RowActions
                       item={item}
-                      pending={activatingId === item.id}
+                      pending={mutationPending}
+                      showProgress={mutationPending && mutationItemId === item.id}
                       onEdit={onEdit}
                       onToggle={onToggle}
                       onDelete={onDelete}
@@ -305,7 +333,8 @@ function CatalogRows({
               <div className="mt-4 border-t border-border pt-4">
                 <RowActions
                   item={item}
-                  pending={activatingId === item.id}
+                  pending={mutationPending}
+                  showProgress={mutationPending && mutationItemId === item.id}
                   onEdit={onEdit}
                   onToggle={onToggle}
                   onDelete={onDelete}
@@ -365,52 +394,91 @@ export function CatalogManagement({
   const editableType: EditableCatalogEntityType | null = query.tab === "varianti"
     ? null
     : query.tab;
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingEntity, setEditingEntity] = useState<EditableCatalogEntity | null>(null);
+  const [editor, setEditor] = useState<{
+    entityType: EditableCatalogEntityType;
+    entity: EditableCatalogEntity | null;
+    families: AdminCatalogFormOptions["families"];
+  } | null>(null);
   const [confirmation, setConfirmation] = useState<{
+    entityType: EditableCatalogEntityType;
     item: EditableCatalogEntity;
     mode: "delete" | "deactivate";
   } | null>(null);
-  const [activatingId, setActivatingId] = useState<string | null>(null);
+  const mutationLockRef = useRef(false);
+  const [mutationItemId, setMutationItemId] = useState<string | null>(null);
   const [, startActivation] = useTransition();
+  const mutationPending = mutationLockRef.current || mutationItemId !== null;
 
-  const saveAction = editableType === "categorie"
-    ? saveCategoryAction
-    : editableType === "famiglie"
-      ? saveFamilyAction
-      : saveComponentAction;
+  useEffect(() => {
+    setEditor(null);
+    setConfirmation(null);
+  }, [query.tab, query.query, query.status, query.page]);
+
+  function saveActionFor(entityType: EditableCatalogEntityType) {
+    if (entityType === "categorie") return saveCategoryAction;
+    if (entityType === "famiglie") return saveFamilyAction;
+    return saveComponentAction;
+  }
+
+  async function runLockedMutation(
+    itemId: string,
+    operation: () => Promise<ActionResult<CatalogMutationResult>>,
+  ): Promise<ActionResult<CatalogMutationResult>> {
+    if (mutationLockRef.current) {
+      return {
+        ok: false,
+        error: {
+          code: "CATALOG_MUTATION_PENDING",
+          message: "Attendi il completamento dell'operazione in corso.",
+        },
+      };
+    }
+
+    mutationLockRef.current = true;
+    setMutationItemId(itemId);
+    try {
+      return await operation();
+    } finally {
+      mutationLockRef.current = false;
+      setMutationItemId(null);
+    }
+  }
 
   function createEntity() {
-    if (!editableType) return;
-    setEditingEntity(null);
-    setDialogOpen(true);
+    if (!editableType || mutationLockRef.current) return;
+    setEditor({ entityType: editableType, entity: null, families: formOptions.families });
   }
 
   function editEntity(item: EditableCatalogEntity) {
-    setEditingEntity(item);
-    setDialogOpen(true);
+    if (mutationLockRef.current) return;
+    setEditor({
+      entityType: entityTypeForItem(item),
+      entity: item,
+      families: formOptions.families,
+    });
   }
 
   function toggleEntity(item: EditableCatalogEntity) {
+    if (mutationLockRef.current) return;
+    const entityType = entityTypeForItem(item);
     if (item.isActive) {
-      setConfirmation({ item, mode: "deactivate" });
+      setConfirmation({ entityType, item, mode: "deactivate" });
       return;
     }
 
-    setActivatingId(item.id);
     startActivation(async () => {
       try {
-        const result = await setCatalogEntityActiveAction({
-          entity: query.tab,
-          id: item.id,
-          isActive: true,
-        });
+        const result = await runLockedMutation(item.id, () => (
+          setCatalogEntityActiveAction({
+            entity: entityType,
+            id: item.id,
+            isActive: true,
+          })
+        ));
         if (result.ok) toast.success("Voce attivata.");
         else toast.error(result.error.message);
       } catch {
         toast.error("Non è stato possibile attivare la voce. Riprova.");
-      } finally {
-        setActivatingId(null);
       }
     });
   }
@@ -443,7 +511,7 @@ export function CatalogManagement({
           </div>
           <Button
             type="button"
-            disabled={!editableType}
+            disabled={!editableType || mutationPending}
             title={editableType ? undefined : "La gestione varianti sarà disponibile nel passaggio successivo"}
             onClick={createEntity}
           >
@@ -503,25 +571,37 @@ export function CatalogManagement({
         ) : (
           <CatalogRows
             result={result}
-            activatingId={activatingId}
+            mutationPending={mutationPending}
+            mutationItemId={mutationItemId}
             onEdit={editEntity}
             onToggle={toggleEntity}
-            onDelete={(item) => setConfirmation({ item, mode: "delete" })}
+            onDelete={(item) => {
+              if (mutationLockRef.current) return;
+              setConfirmation({
+                entityType: entityTypeForItem(item),
+                item,
+                mode: "delete",
+              });
+            }}
           />
         )}
 
         {result ? <CatalogPagination query={query} result={result} /> : null}
       </section>
 
-      {editableType ? (
+      {editor ? (
         <CatalogEntityDialog
-          key={`${editableType}-${editingEntity?.id ?? "new"}`}
-          open={dialogOpen}
-          onOpenChange={setDialogOpen}
-          entityType={editableType}
-          entity={editingEntity}
-          families={formOptions.families}
-          save={saveAction}
+          key={`${editor.entityType}-${editor.entity?.id ?? "new"}`}
+          open
+          onOpenChange={(open) => !open && setEditor(null)}
+          entityType={editor.entityType}
+          entity={editor.entity}
+          families={editor.families}
+          blocked={mutationPending}
+          save={(input) => runLockedMutation(
+            editor.entity?.id ?? `new-${editor.entityType}`,
+            () => saveActionFor(editor.entityType)(input),
+          )}
         />
       ) : null}
 
@@ -530,12 +610,19 @@ export function CatalogManagement({
           key={`${confirmation.mode}-${confirmation.item.id}`}
           open
           onOpenChange={(open) => !open && setConfirmation(null)}
-          entity={query.tab}
+          entity={confirmation.entityType}
           entityId={confirmation.item.id}
           entityName={entityName(confirmation.item)}
           mode={confirmation.mode}
-          deleteEntity={deleteCatalogEntityAction}
-          setActive={setCatalogEntityActiveAction}
+          blocked={mutationPending}
+          deleteEntity={(input) => runLockedMutation(
+            confirmation.item.id,
+            () => deleteCatalogEntityAction(input),
+          )}
+          setActive={(input) => runLockedMutation(
+            confirmation.item.id,
+            () => setCatalogEntityActiveAction(input),
+          )}
         />
       ) : null}
     </div>

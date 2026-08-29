@@ -266,6 +266,7 @@ type CatalogEntityDialogProps = {
   entityType: EditableCatalogEntityType;
   entity: EditableCatalogEntity | null;
   families: AdminRelationOption[];
+  blocked?: boolean;
   save: (input: unknown) => Promise<ActionResult<CatalogMutationResult>>;
 };
 
@@ -275,6 +276,7 @@ export function CatalogEntityDialog({
   entityType,
   entity,
   families,
+  blocked = false,
   save,
 }: CatalogEntityDialogProps) {
   const [iconKey, setIconKey] = useState<CatalogIconKey>(entity?.iconKey ?? "boxes");
@@ -289,11 +291,12 @@ export function CatalogEntityDialog({
   }, [entity, open]);
 
   function close() {
-    if (!pending) onOpenChange(false);
+    if (!pending && !blocked) onOpenChange(false);
   }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (pending || blocked) return;
     const formData = new FormData(event.currentTarget);
     const base = {
       id: entity?.id ?? null,
@@ -338,13 +341,16 @@ export function CatalogEntityDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={(nextOpen) => !pending && onOpenChange(nextOpen)}>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => !pending && !blocked && onOpenChange(nextOpen)}
+    >
       <DialogContent>
         <CatalogEntityForm
           entityType={entityType}
           entity={entity}
           families={families}
-          pending={pending}
+          pending={pending || blocked}
           error={error}
           iconKey={iconKey}
           isActive={isActive}
