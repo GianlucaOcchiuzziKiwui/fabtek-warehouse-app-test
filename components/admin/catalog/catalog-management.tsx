@@ -277,7 +277,7 @@ export function CatalogManagement({
           return (
             <Button key={tab} asChild variant={active ? "default" : "outline"} className="w-full">
               <Link
-                href={buildAdminCatalogHref(query, { tab })}
+                href={buildAdminCatalogHref(query, { tab, page: 1 })}
                 aria-current={active ? "page" : undefined}
               >
                 {TAB_CONTENT[tab].label}

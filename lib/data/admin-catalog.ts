@@ -522,6 +522,12 @@ function errorCode(error: unknown): string | null {
     : null;
 }
 
+function isNonNegativeSafeInteger(value: unknown): value is number {
+  return typeof value === "number"
+    && Number.isSafeInteger(value)
+    && value >= 0;
+}
+
 function mutationError(
   error: unknown,
   operation: "save" | "delete" | "toggle",
@@ -614,22 +620,42 @@ export async function getAdminCatalogPage(
   }
 
   let response = await loadPage(page);
-  if (
-    response.error
-    || !Array.isArray(response.data)
-    || !Number.isSafeInteger(response.count)
-    || (response.count ?? -1) < 0
-  ) {
-    throw new AdminCatalogDataError();
-  }
+  let total: number;
 
-  const total = response.count as number;
-  const clampedPage = clampPage(page, total);
-  if (clampedPage !== page) {
-    page = clampedPage;
-    response = await loadPage(page);
-    if (response.error || !Array.isArray(response.data)) {
+  if (errorCode(response.error) === "PGRST103") {
+    response = await loadPage(1);
+    if (
+      response.error
+      || !Array.isArray(response.data)
+      || !isNonNegativeSafeInteger(response.count)
+    ) {
       throw new AdminCatalogDataError();
+    }
+    total = response.count;
+    page = clampPage(page, total);
+    if (page !== 1) {
+      response = await loadPage(page);
+      if (response.error || !Array.isArray(response.data)) {
+        throw new AdminCatalogDataError();
+      }
+    }
+  } else {
+    if (
+      response.error
+      || !Array.isArray(response.data)
+      || !isNonNegativeSafeInteger(response.count)
+    ) {
+      throw new AdminCatalogDataError();
+    }
+
+    total = response.count;
+    const clampedPage = clampPage(page, total);
+    if (clampedPage !== page) {
+      page = clampedPage;
+      response = await loadPage(page);
+      if (response.error || !Array.isArray(response.data)) {
+        throw new AdminCatalogDataError();
+      }
     }
   }
 

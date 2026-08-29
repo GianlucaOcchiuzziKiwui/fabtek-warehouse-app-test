@@ -450,9 +450,19 @@ test("list pages remain complete and stable when domain ordering values tie at t
   );
 });
 
-test("listing repeats the query on the last valid page when the requested page is too high", async () => {
+test("listing recovers a realistic PostgREST out-of-range response on the last valid page", async () => {
   const { client, calls } = createSessionClient({
     categories: [
+      {
+        data: null,
+        error: {
+          code: "PGRST103",
+          details: null,
+          hint: null,
+          message: "Requested range not satisfiable",
+        },
+        count: null,
+      },
       { data: [], error: null, count: 21 },
       {
         data: [{
@@ -478,7 +488,29 @@ test("listing repeats the query on the last valid page when the requested page i
   assert.equal(result.page, 2);
   assert.equal(result.total, 21);
   assert.equal(result.items.length, 1);
-  assert.deepEqual(calls.map((call) => call.range), [[1960, 1979], [20, 39]]);
+  assert.deepEqual(
+    calls.map((call) => call.range),
+    [[1960, 1979], [0, 19], [20, 39]],
+  );
+});
+
+test("listing does not disguise a malformed count after an out-of-range response", async () => {
+  const { client, calls } = createSessionClient({
+    categories: [
+      {
+        data: null,
+        error: { code: "PGRST103", message: "Requested range not satisfiable" },
+        count: null,
+      },
+      { data: [], error: null, count: null },
+    ],
+  });
+
+  await assert.rejects(
+    getAdminCatalogPage(listQuery({ page: 99 }), dependencies(client)),
+    { name: "AdminCatalogDataError" },
+  );
+  assert.deepEqual(calls.map((call) => call.range), [[1960, 1979], [0, 19]]);
 });
 
 test("listing normalizes an overflow-prone page before constructing its range", async () => {

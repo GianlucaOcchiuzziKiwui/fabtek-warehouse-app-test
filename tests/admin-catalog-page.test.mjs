@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import React from "react";
@@ -193,6 +192,32 @@ test("catalog links retain the complete server-side filter state", () => {
   );
 });
 
+test("switching catalog tabs preserves search and status but resets pagination", () => {
+  const { CatalogManagement } = loadProjectModule(
+    "components/admin/catalog/catalog-management.tsx",
+    new Map([["next/link", Link]]),
+  );
+  const markup = renderToStaticMarkup(React.createElement(CatalogManagement, {
+    query: {
+      tab: "categorie",
+      query: "valvole & tubi",
+      status: "inattivi",
+      page: 4,
+    },
+    result: emptyPage({ page: 4 }),
+    formOptions: EMPTY_OPTIONS,
+  }));
+
+  assert.match(
+    markup,
+    /href="\/admin\/catalogo\?tab=famiglie&amp;q=valvole\+%26\+tubi&amp;status=inattivi&amp;page=1"/u,
+  );
+  assert.doesNotMatch(
+    markup,
+    /href="\/admin\/catalogo\?tab=famiglie[^"]*&amp;page=4"/u,
+  );
+});
+
 test("renders accessible filters, responsive rows, statuses and pagination", () => {
   const { CatalogManagement } = loadProjectModule(
     "components/admin/catalog/catalog-management.tsx",
@@ -276,7 +301,26 @@ test("shows the catalog management destination only to Admin users", () => {
   assert.match(adminMarkup, /Gestisci catalogo/u);
 });
 
-test("the route loading state announces progress", async () => {
-  const source = await readFile("app/(app)/admin/catalogo/loading.tsx", "utf8");
-  assert.match(source, /aria-label="Caricamento gestione catalogo"/u);
+test("the route loading state exposes status text and respects reduced motion", () => {
+  const loading = loadProjectModule(
+    "app/(app)/admin/catalogo/loading.tsx",
+    new Map([["@/components/shared/page-heading", {
+      PageHeading({ title }) {
+        return React.createElement("h1", null, title);
+      },
+    }]]),
+  );
+  const tree = loading.default();
+  const [, status] = React.Children.toArray(tree.props.children);
+  const statusChildren = React.Children.toArray(status.props.children);
+
+  assert.equal(status.props.role, "status");
+  assert.equal(status.props["aria-live"], "polite");
+  assert.equal(statusChildren[0].type, "span");
+  assert.match(statusChildren[0].props.className, /\bsr-only\b/u);
+  assert.equal(statusChildren[0].props.children, "Caricamento gestione catalogo in corso.");
+  for (const skeleton of statusChildren.slice(1)) {
+    assert.match(skeleton.props.className, /\banimate-pulse\b/u);
+    assert.match(skeleton.props.className, /\bmotion-reduce:animate-none\b/u);
+  }
 });
