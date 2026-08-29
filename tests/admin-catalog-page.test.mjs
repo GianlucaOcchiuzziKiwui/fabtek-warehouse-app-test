@@ -61,6 +61,26 @@ function Link({ href, children, ...props }) {
   return React.createElement("a", { href, ...props }, children);
 }
 
+function managementOverrides() {
+  const success = { ok: true, data: { id: "10000000-0000-4000-8000-000000000001" } };
+  return new Map([
+    ["next/link", Link],
+    ["@/app/(app)/admin/catalogo/actions", {
+      async saveCategoryAction() { return success; },
+      async saveFamilyAction() { return success; },
+      async saveComponentAction() { return success; },
+      async deleteCatalogEntityAction() { return success; },
+      async setCatalogEntityActiveAction() { return success; },
+    }],
+    ["@/components/admin/catalog/catalog-entity-dialog", {
+      CatalogEntityDialog() { return null; },
+    }],
+    ["@/components/admin/catalog/catalog-delete-dialog", {
+      CatalogDeleteDialog() { return null; },
+    }],
+  ]);
+}
+
 const EMPTY_OPTIONS = {
   categories: [],
   families: [],
@@ -177,7 +197,7 @@ test("loads each supported tab and falls back to categories for unknown values",
 test("catalog links retain the complete server-side filter state", () => {
   const { buildAdminCatalogHref } = loadProjectModule(
     "components/admin/catalog/catalog-management.tsx",
-    new Map([["next/link", Link]]),
+    managementOverrides(),
   );
   const query = {
     tab: "categorie",
@@ -195,7 +215,7 @@ test("catalog links retain the complete server-side filter state", () => {
 test("switching catalog tabs preserves search and status but resets pagination", () => {
   const { CatalogManagement } = loadProjectModule(
     "components/admin/catalog/catalog-management.tsx",
-    new Map([["next/link", Link]]),
+    managementOverrides(),
   );
   const markup = renderToStaticMarkup(React.createElement(CatalogManagement, {
     query: {
@@ -221,7 +241,7 @@ test("switching catalog tabs preserves search and status but resets pagination",
 test("renders accessible filters, responsive rows, statuses and pagination", () => {
   const { CatalogManagement } = loadProjectModule(
     "components/admin/catalog/catalog-management.tsx",
-    new Map([["next/link", Link]]),
+    managementOverrides(),
   );
   const markup = renderToStaticMarkup(React.createElement(CatalogManagement, {
     query: { tab: "categorie", query: "pompe", status: "tutti", page: 2 },
@@ -245,7 +265,7 @@ test("renders accessible filters, responsive rows, statuses and pagination", () 
   assert.match(markup, /aria-label="Sezioni gestione catalogo"/u);
   assert.match(markup, /aria-current="page"/u);
   assert.match(markup, />Nuovo</u);
-  assert.match(markup, /disabled=""/u);
+  assert.match(markup, />Modifica</u);
   assert.match(markup, /<label[^>]*for="admin-catalog-query"/u);
   assert.match(markup, /<label[^>]*for="admin-catalog-status"/u);
   assert.match(markup, /name="tab" value="categorie"/u);
@@ -260,7 +280,7 @@ test("renders accessible filters, responsive rows, statuses and pagination", () 
 test("renders explicit empty and recoverable data-error states", () => {
   const { CatalogManagement } = loadProjectModule(
     "components/admin/catalog/catalog-management.tsx",
-    new Map([["next/link", Link]]),
+    managementOverrides(),
   );
   const props = {
     query: { tab: "varianti", query: "", status: "attivi", page: 1 },

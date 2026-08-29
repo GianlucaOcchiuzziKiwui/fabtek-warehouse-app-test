@@ -1,3 +1,18 @@
+"use client";
+
+import {
+  deleteCatalogEntityAction,
+  saveCategoryAction,
+  saveComponentAction,
+  saveFamilyAction,
+  setCatalogEntityActiveAction,
+} from "@/app/(app)/admin/catalogo/actions";
+import { CatalogDeleteDialog } from "@/components/admin/catalog/catalog-delete-dialog";
+import {
+  CatalogEntityDialog,
+  type EditableCatalogEntity,
+  type EditableCatalogEntityType,
+} from "@/components/admin/catalog/catalog-entity-dialog";
 import { CatalogIcon } from "@/components/catalog/catalog-icon";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
@@ -10,8 +25,10 @@ import type {
   AdminCatalogPage,
   AdminCatalogRow,
 } from "@/lib/data/admin-catalog";
-import { Plus, RotateCcw, Search } from "lucide-react";
+import { Loader2, Plus, RotateCcw, Search } from "lucide-react";
 import Link from "next/link";
+import { useState, useTransition } from "react";
+import { toast } from "sonner";
 
 const TAB_CONTENT: Record<AdminCatalogTab, {
   label: string;
@@ -176,7 +193,60 @@ function RowDetails({ item }: { item: AdminCatalogRow }) {
   );
 }
 
-function CatalogRows({ result }: { result: AdminCatalogPage }) {
+function entityName(item: AdminCatalogRow) {
+  return item.kind === "variante" ? item.fabtekCode : item.name;
+}
+
+function RowActions({
+  item,
+  pending,
+  onEdit,
+  onToggle,
+  onDelete,
+}: {
+  item: AdminCatalogRow;
+  pending: boolean;
+  onEdit: (item: EditableCatalogEntity) => void;
+  onToggle: (item: EditableCatalogEntity) => void;
+  onDelete: (item: EditableCatalogEntity) => void;
+}) {
+  if (item.kind === "variante") return null;
+  return (
+    <div className="flex flex-wrap gap-2 md:flex-col md:items-stretch">
+      <Button type="button" variant="outline" className="px-3" onClick={() => onEdit(item)}>
+        Modifica
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        className="px-3"
+        disabled={pending}
+        onClick={() => onToggle(item)}
+      >
+        {pending ? <Loader2 aria-hidden="true" className="animate-spin" /> : null}
+        {item.isActive ? "Disattiva" : "Attiva"}
+      </Button>
+      <Button type="button" variant="destructive" className="px-3" onClick={() => onDelete(item)}>
+        Elimina
+      </Button>
+    </div>
+  );
+}
+
+function CatalogRows({
+  result,
+  activatingId,
+  onEdit,
+  onToggle,
+  onDelete,
+}: {
+  result: AdminCatalogPage;
+  activatingId: string | null;
+  onEdit: (item: EditableCatalogEntity) => void;
+  onToggle: (item: EditableCatalogEntity) => void;
+  onDelete: (item: EditableCatalogEntity) => void;
+}) {
+  const manageable = result.items.some((item) => item.kind !== "variante");
   return (
     <div className="space-y-5">
       <p className="text-sm text-muted-foreground">
@@ -187,10 +257,11 @@ function CatalogRows({ result }: { result: AdminCatalogPage }) {
         <table className="w-full table-fixed text-left text-sm">
           <thead className="bg-muted/70 text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
-              <th scope="col" className="w-[34%] px-4 py-3">Voce</th>
-              <th scope="col" className="w-[42%] px-4 py-3">Dettagli</th>
-              <th scope="col" className="w-[10%] px-4 py-3">Ordine</th>
-              <th scope="col" className="w-[14%] px-4 py-3">Stato</th>
+              <th scope="col" className="w-[28%] px-4 py-3">Voce</th>
+              <th scope="col" className="w-[34%] px-4 py-3">Dettagli</th>
+              <th scope="col" className="w-[9%] px-4 py-3">Ordine</th>
+              <th scope="col" className="w-[11%] px-4 py-3">Stato</th>
+              {manageable ? <th scope="col" className="w-[18%] px-4 py-3">Azioni</th> : null}
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -202,6 +273,17 @@ function CatalogRows({ result }: { result: AdminCatalogPage }) {
                 <td className="px-4 py-4 align-top"><RowDetails item={item} /></td>
                 <td className="px-4 py-4 align-top tabular-nums">{item.sortOrder}</td>
                 <td className="px-4 py-4 align-top"><CatalogStatusBadge isActive={item.isActive} /></td>
+                {manageable ? (
+                  <td className="px-4 py-4 align-top">
+                    <RowActions
+                      item={item}
+                      pending={activatingId === item.id}
+                      onEdit={onEdit}
+                      onToggle={onToggle}
+                      onDelete={onDelete}
+                    />
+                  </td>
+                ) : null}
               </tr>
             ))}
           </tbody>
@@ -219,6 +301,17 @@ function CatalogRows({ result }: { result: AdminCatalogPage }) {
               <RowDetails item={item} />
             </div>
             <p className="mt-4 text-xs text-muted-foreground">Ordine: {item.sortOrder}</p>
+            {item.kind !== "variante" ? (
+              <div className="mt-4 border-t border-border pt-4">
+                <RowActions
+                  item={item}
+                  pending={activatingId === item.id}
+                  onEdit={onEdit}
+                  onToggle={onToggle}
+                  onDelete={onDelete}
+                />
+              </div>
+            ) : null}
           </article>
         ))}
       </div>
@@ -260,6 +353,7 @@ function CatalogPagination({
 export function CatalogManagement({
   query,
   result,
+  formOptions,
   loadError = false,
 }: {
   query: AdminCatalogListQuery;
@@ -268,6 +362,58 @@ export function CatalogManagement({
   loadError?: boolean;
 }) {
   const content = TAB_CONTENT[query.tab];
+  const editableType: EditableCatalogEntityType | null = query.tab === "varianti"
+    ? null
+    : query.tab;
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingEntity, setEditingEntity] = useState<EditableCatalogEntity | null>(null);
+  const [confirmation, setConfirmation] = useState<{
+    item: EditableCatalogEntity;
+    mode: "delete" | "deactivate";
+  } | null>(null);
+  const [activatingId, setActivatingId] = useState<string | null>(null);
+  const [, startActivation] = useTransition();
+
+  const saveAction = editableType === "categorie"
+    ? saveCategoryAction
+    : editableType === "famiglie"
+      ? saveFamilyAction
+      : saveComponentAction;
+
+  function createEntity() {
+    if (!editableType) return;
+    setEditingEntity(null);
+    setDialogOpen(true);
+  }
+
+  function editEntity(item: EditableCatalogEntity) {
+    setEditingEntity(item);
+    setDialogOpen(true);
+  }
+
+  function toggleEntity(item: EditableCatalogEntity) {
+    if (item.isActive) {
+      setConfirmation({ item, mode: "deactivate" });
+      return;
+    }
+
+    setActivatingId(item.id);
+    startActivation(async () => {
+      try {
+        const result = await setCatalogEntityActiveAction({
+          entity: query.tab,
+          id: item.id,
+          isActive: true,
+        });
+        if (result.ok) toast.success("Voce attivata.");
+        else toast.error(result.error.message);
+      } catch {
+        toast.error("Non è stato possibile attivare la voce. Riprova.");
+      } finally {
+        setActivatingId(null);
+      }
+    });
+  }
 
   return (
     <div className="space-y-6">
@@ -295,7 +441,12 @@ export function CatalogManagement({
             </h2>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">{content.description}</p>
           </div>
-          <Button type="button" disabled title="La creazione sarà disponibile nel passaggio successivo">
+          <Button
+            type="button"
+            disabled={!editableType}
+            title={editableType ? undefined : "La gestione varianti sarà disponibile nel passaggio successivo"}
+            onClick={createEntity}
+          >
             <Plus aria-hidden="true" />
             Nuovo
           </Button>
@@ -350,11 +501,43 @@ export function CatalogManagement({
         ) : result.items.length === 0 ? (
           <EmptyState title={content.emptyTitle} description={content.emptyDescription} />
         ) : (
-          <CatalogRows result={result} />
+          <CatalogRows
+            result={result}
+            activatingId={activatingId}
+            onEdit={editEntity}
+            onToggle={toggleEntity}
+            onDelete={(item) => setConfirmation({ item, mode: "delete" })}
+          />
         )}
 
         {result ? <CatalogPagination query={query} result={result} /> : null}
       </section>
+
+      {editableType ? (
+        <CatalogEntityDialog
+          key={`${editableType}-${editingEntity?.id ?? "new"}`}
+          open={dialogOpen}
+          onOpenChange={setDialogOpen}
+          entityType={editableType}
+          entity={editingEntity}
+          families={formOptions.families}
+          save={saveAction}
+        />
+      ) : null}
+
+      {confirmation ? (
+        <CatalogDeleteDialog
+          key={`${confirmation.mode}-${confirmation.item.id}`}
+          open
+          onOpenChange={(open) => !open && setConfirmation(null)}
+          entity={query.tab}
+          entityId={confirmation.item.id}
+          entityName={entityName(confirmation.item)}
+          mode={confirmation.mode}
+          deleteEntity={deleteCatalogEntityAction}
+          setActive={setCatalogEntityActiveAction}
+        />
+      ) : null}
     </div>
   );
 }

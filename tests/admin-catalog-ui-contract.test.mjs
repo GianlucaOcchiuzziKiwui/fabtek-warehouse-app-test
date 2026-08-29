@@ -13,7 +13,7 @@ const projectRequire = createRequire(import.meta.url);
 const projectRoot = process.cwd();
 const { AlertDialog: RadixAlertDialog, Dialog: RadixDialog } = projectRequire("radix-ui");
 
-function loadProjectModule(relativePath, cache = new Map()) {
+function loadProjectModule(relativePath, overrides = new Map(), cache = new Map()) {
   const filename = path.resolve(projectRoot, relativePath);
   if (cache.has(filename)) return cache.get(filename).exports;
 
@@ -31,12 +31,13 @@ function loadProjectModule(relativePath, cache = new Map()) {
   });
 
   function localRequire(specifier) {
+    if (overrides.has(specifier)) return overrides.get(specifier);
     if (specifier.startsWith("@/")) {
       const resolved = path.resolve(projectRoot, specifier.slice(2));
       for (const extension of ["", ".ts", ".tsx"]) {
         const candidate = `${resolved}${extension}`;
         try {
-          return loadProjectModule(path.relative(projectRoot, candidate), cache);
+          return loadProjectModule(path.relative(projectRoot, candidate), overrides, cache);
         } catch (error) {
           if (error?.code !== "ENOENT") throw error;
         }
@@ -218,4 +219,283 @@ test("dialog adapters retain Radix controlled-root and accessible content primit
   assert.equal(content.type, RadixDialog.Content);
   assert.equal(close.type, RadixDialog.Close);
   assert.equal(close.props["aria-label"], "Chiudi");
+});
+
+const FAMILY_ID = "10000000-0000-4000-8000-000000000010";
+const DIALOG_OVERRIDES = new Map([
+  ["@/components/ui/dialog", {
+    DialogHeader: ({ children }) => React.createElement("header", null, children),
+    DialogTitle: ({ children }) => React.createElement("h2", null, children),
+    DialogDescription: ({ children }) => React.createElement("p", null, children),
+    DialogFooter: ({ children }) => React.createElement("footer", null, children),
+  }],
+  ["@/components/ui/alert-dialog", {
+    AlertDialogHeader: ({ children }) => React.createElement("header", null, children),
+    AlertDialogTitle: ({ children }) => React.createElement("h2", null, children),
+    AlertDialogDescription: ({ children }) => React.createElement("p", null, children),
+    AlertDialogFooter: ({ children }) => React.createElement("footer", null, children),
+  }],
+]);
+
+test("category create form exposes every editable field and the shared icon select", () => {
+  const { CatalogEntityForm } = loadProjectModule(
+    "components/admin/catalog/catalog-entity-dialog.tsx",
+    DIALOG_OVERRIDES,
+  );
+  const markup = renderToStaticMarkup(React.createElement(CatalogEntityForm, {
+    entityType: "categorie",
+    entity: null,
+    families: [],
+    pending: false,
+    error: null,
+    onSubmit() {},
+    onCancel() {},
+  }));
+
+  assert.match(markup, /Nuova categoria/u);
+  assert.match(markup, /<label[^>]*for="catalog-entity-code"[^>]*>Codice/u);
+  assert.match(markup, /<label[^>]*for="catalog-entity-name"[^>]*>Nome/u);
+  assert.match(markup, /<label[^>]*for="catalog-entity-subtitle"[^>]*>Sottotitolo/u);
+  assert.match(markup, /<label[^>]*for="catalog-entity-icon"[^>]*>Icona/u);
+  assert.match(markup, /data-catalog-icon="boxes"/u);
+  assert.match(markup, /<label[^>]*for="catalog-entity-sort-order"[^>]*>Ordine/u);
+  assert.match(markup, /<label[^>]*for="catalog-entity-active"/u);
+  assert.match(markup, />Annulla</u);
+  assert.match(markup, />Crea categoria</u);
+});
+
+test("family edit form is initialized from the selected entity", () => {
+  const { CatalogEntityForm } = loadProjectModule(
+    "components/admin/catalog/catalog-entity-dialog.tsx",
+    DIALOG_OVERRIDES,
+  );
+  const markup = renderToStaticMarkup(React.createElement(CatalogEntityForm, {
+    entityType: "famiglie",
+    entity: {
+      kind: "famiglia",
+      id: FAMILY_ID,
+      sourceCode: "F-01",
+      name: "Valvole",
+      subtitle: "Processo",
+      iconKey: "wrench",
+      sortOrder: 7,
+      isActive: false,
+    },
+    families: [],
+    pending: false,
+    error: null,
+    onSubmit() {},
+    onCancel() {},
+  }));
+
+  assert.match(markup, /Modifica famiglia/u);
+  assert.match(markup, /value="F-01"/u);
+  assert.match(markup, /value="Valvole"/u);
+  assert.match(markup, /value="Processo"/u);
+  assert.match(markup, /data-catalog-icon="wrench"/u);
+  assert.match(markup, /value="7"/u);
+  assert.match(markup, />Salva modifiche</u);
+});
+
+test("component form requires a family and keeps inactive families visible", () => {
+  const { CatalogEntityForm } = loadProjectModule(
+    "components/admin/catalog/catalog-entity-dialog.tsx",
+    DIALOG_OVERRIDES,
+  );
+  const markup = renderToStaticMarkup(React.createElement(CatalogEntityForm, {
+    entityType: "componenti",
+    entity: null,
+    families: [{ id: FAMILY_ID, name: "Valvole", isActive: false }],
+    pending: false,
+    error: null,
+    onSubmit() {},
+    onCancel() {},
+  }));
+
+  assert.match(markup, /Nuovo componente/u);
+  assert.match(markup, /<label[^>]*for="catalog-entity-family"[^>]*>Famiglia/u);
+  assert.match(markup, /<select[^>]*id="catalog-entity-family"[^>]*required/u);
+  assert.match(markup, /value="10000000-0000-4000-8000-000000000010"/u);
+  assert.match(markup, /Valvole \(inattiva\)/u);
+  assert.match(markup, /<label[^>]*for="catalog-entity-description"[^>]*>Descrizione/u);
+});
+
+test("entity form announces errors, disables submission while pending and keeps cancel focusable", () => {
+  const { CatalogEntityForm } = loadProjectModule(
+    "components/admin/catalog/catalog-entity-dialog.tsx",
+    DIALOG_OVERRIDES,
+  );
+  const markup = renderToStaticMarkup(React.createElement(CatalogEntityForm, {
+    entityType: "categorie",
+    entity: null,
+    families: [],
+    pending: true,
+    error: "Esiste già una categoria con questo codice.",
+    onSubmit() {},
+    onCancel() {},
+  }));
+
+  assert.match(markup, /role="alert"/u);
+  assert.match(markup, /aria-live="polite"/u);
+  assert.match(markup, /Esiste già una categoria con questo codice/u);
+  assert.match(markup, /<button[^>]*type="submit"[^>]*disabled/u);
+  assert.match(markup, /Salvataggio/u);
+  assert.match(markup, /<button[^>]*type="button"[^>]*>Annulla/u);
+});
+
+test("successful entity save shows a toast and closes the controlled dialog", async () => {
+  const events = [];
+  let transition;
+  const fakeReact = {
+    ...React,
+    useEffect() {},
+    useState(initialValue) {
+      return [initialValue, (value) => events.push(["state", value])];
+    },
+    useTransition() {
+      return [false, (callback) => { transition = Promise.resolve(callback()); }];
+    },
+  };
+  const overrides = new Map([
+    ["react", fakeReact],
+    ["sonner", { toast: { success(message) { events.push(["toast", message]); } } }],
+    ["@/components/ui/dialog", {
+      Dialog: ({ children }) => children,
+      DialogContent: ({ children }) => children,
+      DialogHeader: ({ children }) => children,
+      DialogTitle: ({ children }) => children,
+      DialogDescription: ({ children }) => children,
+      DialogFooter: ({ children }) => children,
+    }],
+  ]);
+  const { CatalogEntityDialog } = loadProjectModule(
+    "components/admin/catalog/catalog-entity-dialog.tsx",
+    overrides,
+  );
+  const originalFormData = globalThis.FormData;
+  globalThis.FormData = class FakeFormData {
+    constructor(form) { this.form = form; }
+    get(name) { return this.form[name] ?? null; }
+  };
+
+  try {
+    const tree = CatalogEntityDialog({
+      open: true,
+      onOpenChange(open) { events.push(["open", open]); },
+      entityType: "categorie",
+      entity: null,
+      families: [],
+      async save(input) {
+        events.push(["save", input]);
+        return { ok: true, data: { id: FAMILY_ID } };
+      },
+    });
+    const content = tree.props.children;
+    const form = content.props.children;
+    form.props.onSubmit({
+      preventDefault() {},
+      currentTarget: {
+        name: "Pompe",
+        code: "CAT-01",
+        subtitle: "Processo",
+        sortOrder: "4",
+      },
+    });
+    await transition;
+  } finally {
+    globalThis.FormData = originalFormData;
+  }
+
+  assert.deepEqual(events.find(([event]) => event === "save")?.[1], {
+    id: null,
+    name: "Pompe",
+    iconKey: "boxes",
+    sortOrder: "4",
+    isActive: true,
+    code: "CAT-01",
+    subtitle: "Processo",
+  });
+  assert.deepEqual(events.filter(([event]) => event === "toast"), [
+    ["toast", "Categoria salvata."],
+  ]);
+  assert.deepEqual(events.filter(([event]) => event === "open"), [["open", false]]);
+});
+
+test("referenced delete response changes the primary action to an explicit deactivation", () => {
+  const { CatalogDeleteDialogBody } = loadProjectModule(
+    "components/admin/catalog/catalog-delete-dialog.tsx",
+    DIALOG_OVERRIDES,
+  );
+  const markup = renderToStaticMarkup(React.createElement(CatalogDeleteDialogBody, {
+    entityName: "Valvole",
+    mode: "delete",
+    referenced: true,
+    pending: false,
+    error: null,
+    onCancel() {},
+    onConfirm() {},
+  }));
+
+  assert.match(markup, /non può essere eliminata perché è utilizzata/u);
+  assert.match(markup, /Puoi disattivarla/u);
+  assert.match(markup, /<button[^>]*type="button"[^>]*>Annulla/u);
+  assert.match(markup, /<button[^>]*type="button"[^>]*>Disattiva/u);
+  assert.doesNotMatch(markup, />Elimina</u);
+});
+
+test("catalog management exposes group CRUD actions in desktop and mobile layouts", () => {
+  function Link({ href, children, ...props }) {
+    return React.createElement("a", { href, ...props }, children);
+  }
+  const overrides = new Map([
+    ["next/link", Link],
+    ["@/app/(app)/admin/catalogo/actions", {
+      async saveCategoryAction() { return { ok: true, data: { id: FAMILY_ID } }; },
+      async saveFamilyAction() { return { ok: true, data: { id: FAMILY_ID } }; },
+      async saveComponentAction() { return { ok: true, data: { id: FAMILY_ID } }; },
+      async deleteCatalogEntityAction() { return { ok: true, data: { id: FAMILY_ID } }; },
+      async setCatalogEntityActiveAction() { return { ok: true, data: { id: FAMILY_ID } }; },
+    }],
+    ["@/components/admin/catalog/catalog-entity-dialog", {
+      CatalogEntityDialog() { return null; },
+    }],
+    ["@/components/admin/catalog/catalog-delete-dialog", {
+      CatalogDeleteDialog() { return null; },
+    }],
+  ]);
+  const { CatalogManagement } = loadProjectModule(
+    "components/admin/catalog/catalog-management.tsx",
+    overrides,
+  );
+  const markup = renderToStaticMarkup(React.createElement(CatalogManagement, {
+    query: { tab: "categorie", query: "pompe", status: "tutti", page: 1 },
+    result: {
+      page: 1,
+      pageSize: 20,
+      total: 1,
+      items: [{
+        kind: "categoria",
+        id: FAMILY_ID,
+        code: "CAT-01",
+        name: "Pompe",
+        subtitle: "Processo",
+        iconKey: "factory",
+        sortOrder: 4,
+        isActive: true,
+      }],
+    },
+    formOptions: { categories: [], families: [], components: [], unitsOfMeasure: [] },
+  }));
+
+  const createButton = markup.match(/<button[^>]*type="button"[^>]*>[\s\S]*?Nuovo<\/button>/u)?.[0] ?? "";
+  assert.match(createButton, /Nuovo/u);
+  assert.doesNotMatch(
+    createButton.match(/^<button[^>]*>/u)?.[0] ?? "",
+    /\sdisabled(?:=|\s|>)/u,
+  );
+  assert.equal((markup.match(/>Modifica</gu) ?? []).length, 2);
+  assert.equal((markup.match(/>Disattiva</gu) ?? []).length, 2);
+  assert.equal((markup.match(/>Elimina</gu) ?? []).length, 2);
+  assert.match(markup, /class="[^"]*hidden[^"]*md:block/u);
+  assert.match(markup, /class="[^"]*md:hidden/u);
 });
