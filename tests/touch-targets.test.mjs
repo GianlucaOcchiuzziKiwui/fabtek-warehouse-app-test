@@ -27,5 +27,5 @@ test("primary catalog and request controls keep a 40px minimum target", async ()
 test("application navigation links keep a 40px minimum target", async () => {
   const source = await readFile("components/layout/app-navigation.tsx", "utf8");
 
-  assert.equal(source.match(/min-h-10/g)?.length, 3);
+  assert.equal(source.match(/min-h-10/g)?.length, 4);
 });

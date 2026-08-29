@@ -1,4 +1,4 @@
-import { ClipboardList, House, PackageSearch, Settings2 } from "lucide-react";
+import { ClipboardList, House, LibraryBig, PackageSearch, Settings2 } from "lucide-react";
 import Link from "next/link";
 import { Suspense } from "react";
 import { RequestCartHeader } from "../requests/request-cart-header";
@@ -39,13 +39,22 @@ export function AppNavigation({
           Richieste
         </Link>
         {isAdmin ? (
-          <Link
-            href="/admin/richieste"
-            className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold text-[#d9e8f7] transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-          >
-            <Settings2 aria-hidden="true" className="size-4" />
-            Gestisci richieste
-          </Link>
+          <>
+            <Link
+              href="/admin/richieste"
+              className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold text-[#d9e8f7] transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+            >
+              <Settings2 aria-hidden="true" className="size-4" />
+              Gestisci richieste
+            </Link>
+            <Link
+              href="/admin/catalogo"
+              className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold text-[#d9e8f7] transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+            >
+              <LibraryBig aria-hidden="true" className="size-4" />
+              Gestisci catalogo
+            </Link>
+          </>
         ) : null}
         {showRequestCart ? (
           <Suspense fallback={null}>
