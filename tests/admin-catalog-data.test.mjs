@@ -136,6 +136,86 @@ function createSessionClient(responses = {}) {
   return { client, calls };
 }
 
+function createUnstableTieClient(rowsByTable) {
+  const calls = [];
+  const queryCounts = new Map();
+
+  class Query {
+    constructor(table) {
+      this.table = table;
+      this.filters = [];
+      this.orders = [];
+      this.rangeValue = null;
+      this.call = {
+        table,
+        orders: this.orders,
+        range: null,
+      };
+      calls.push(this.call);
+    }
+
+    select() {
+      return this;
+    }
+
+    eq(column, value) {
+      this.filters.push([column, value]);
+      return this;
+    }
+
+    or() {
+      return this;
+    }
+
+    order(column) {
+      this.orders.push(column);
+      return this;
+    }
+
+    range(from, to) {
+      this.rangeValue = [from, to];
+      this.call.range = this.rangeValue;
+      return this;
+    }
+
+    then(resolve, reject) {
+      const queryNumber = queryCounts.get(this.table) ?? 0;
+      queryCounts.set(this.table, queryNumber + 1);
+      const hasStableIdOrder = this.orders.at(-1) === "id";
+      const tieDirection = queryNumber % 2 === 0 ? 1 : -1;
+      const rows = [...(rowsByTable[this.table] ?? [])]
+        .filter((row) => this.filters.every(([column, value]) => (
+          row[column] === value
+        )))
+        .sort((left, right) => {
+          for (const column of this.orders) {
+            const comparison = String(left[column] ?? "")
+              .localeCompare(String(right[column] ?? ""));
+            if (comparison !== 0) return comparison;
+          }
+          return hasStableIdOrder
+            ? 0
+            : String(left.id).localeCompare(String(right.id)) * tieDirection;
+        });
+      const [from, to] = this.rangeValue ?? [0, rows.length - 1];
+      return Promise.resolve({
+        data: rows.slice(from, to + 1),
+        error: null,
+        count: rows.length,
+      }).then(resolve, reject);
+    }
+  }
+
+  return {
+    calls,
+    client: {
+      from(table) {
+        return new Query(table);
+      },
+    },
+  };
+}
+
 function dependencies(client) {
   return { createClient: async () => client };
 }
@@ -211,6 +291,7 @@ test("category listing emits a bounded escaped search and maps its page", async 
   assert.deepEqual(calls[0].orders, [
     ["sort_order", null],
     ["name", null],
+    ["id", null],
   ]);
   assert.deepEqual(calls[0].range, [0, 19]);
 });
@@ -221,16 +302,19 @@ test("each tab selects only its list fields and variants embed all display relat
       tab: "famiglie",
       table: "families",
       select: "id,source_code,name,subtitle,icon_key,sort_order,is_active",
+      orders: ["sort_order", "name", "id"],
     },
     {
       tab: "componenti",
       table: "components",
       select: "id,family_id,name,description,icon_key,sort_order,is_active,family:families!inner(id,name,is_active)",
+      orders: ["sort_order", "name", "id"],
     },
     {
       tab: "varianti",
       table: "item_variants",
       select: "id,component_id,fabtek_code,oracle_sapio_code,description,diameter,material,connection,unit_of_measure_id,track_inventory,sort_order,is_active,component:components!inner(id,name,is_active,family:families!inner(id,name,is_active)),unit_of_measure:units_of_measure!inner(id,code,name,is_active),categories:item_variant_categories(category:categories!inner(id,name,is_active))",
+      orders: ["sort_order", "fabtek_code", "id"],
     },
   ];
 
@@ -247,6 +331,10 @@ test("each tab selects only its list fields and variants embed all display relat
     assert.equal(calls.length, 1);
     assert.equal(calls[0].table, expected.table);
     assert.equal(compact(calls[0].select), expected.select);
+    assert.deepEqual(
+      calls[0].orders.map(([column]) => column),
+      expected.orders,
+    );
     assert.equal(
       calls[0].filters.some((filter) => filter[1] === "is_active"),
       false,
@@ -329,7 +417,37 @@ test("variant listing maps embedded component, family, unit and categories witho
   assert.deepEqual(calls[0].orders, [
     ["sort_order", null],
     ["fabtek_code", null],
+    ["id", null],
   ]);
+});
+
+test("list pages remain complete and stable when domain ordering values tie at the boundary", async () => {
+  const categories = Array.from({ length: 21 }, (_, index) => ({
+    id: optionId(index + 1),
+    code: `CAT-${index + 1}`,
+    name: "Stesso nome",
+    subtitle: null,
+    icon_key: "factory",
+    sort_order: 0,
+    is_active: true,
+  }));
+  const { client, calls } = createUnstableTieClient({ categories });
+
+  const [firstPage, secondPage] = await Promise.all([
+    getAdminCatalogPage(listQuery({ page: 1 }), dependencies(client)),
+    getAdminCatalogPage(listQuery({ page: 2 }), dependencies(client)),
+  ]);
+  const ids = [...firstPage.items, ...secondPage.items].map((item) => item.id);
+
+  assert.deepEqual(ids, categories.map((category) => category.id));
+  assert.equal(new Set(ids).size, categories.length);
+  assert.deepEqual(
+    calls.map((call) => call.orders),
+    [
+      ["sort_order", "name", "id"],
+      ["sort_order", "name", "id"],
+    ],
+  );
 });
 
 test("listing repeats the query on the last valid page when the requested page is too high", async () => {
@@ -409,6 +527,10 @@ test("form options load no tables for groups, only families for components, and 
   );
   assert.deepEqual(componentClient.calls.map((call) => call.table), ["families"]);
   assert.equal(compact(componentClient.calls[0].select), "id,name,is_active");
+  assert.deepEqual(
+    componentClient.calls[0].orders.map(([column]) => column),
+    ["sort_order", "name", "id"],
+  );
 
   const variantClient = createSessionClient({
     categories: empty,
@@ -426,6 +548,17 @@ test("form options load no tables for groups, only families for components, and 
   assert.equal(
     variantClient.calls.some((call) => call.table === "families"),
     false,
+  );
+  assert.deepEqual(
+    Object.fromEntries(variantClient.calls.map((call) => [
+      call.table,
+      call.orders.map(([column]) => column),
+    ])),
+    {
+      categories: ["sort_order", "name", "id"],
+      components: ["sort_order", "name", "id"],
+      units_of_measure: ["name", "id"],
+    },
   );
 });
 
@@ -535,6 +668,32 @@ test("form options collect every PostgREST page instead of truncating at one tho
       [[0, 999], [1_000, 1_999]],
     );
   }
+});
+
+test("option pages remain complete and stable when sort order and name tie at the boundary", async () => {
+  const families = Array.from({ length: 1_001 }, (_, index) => ({
+    id: optionId(index + 1),
+    name: "Stesso nome",
+    sort_order: 0,
+    is_active: true,
+  }));
+  const { client, calls } = createUnstableTieClient({ families });
+
+  const options = await getAdminCatalogFormOptions(
+    "componenti",
+    dependencies(client),
+  );
+  const ids = options.families.map((family) => family.id);
+
+  assert.deepEqual(ids, families.map((family) => family.id));
+  assert.equal(new Set(ids).size, families.length);
+  assert.deepEqual(
+    calls.map((call) => call.orders),
+    [
+      ["sort_order", "name", "id"],
+      ["sort_order", "name", "id"],
+    ],
+  );
 });
 
 test("single-table saves emit normalized database payloads and return the row id", async () => {

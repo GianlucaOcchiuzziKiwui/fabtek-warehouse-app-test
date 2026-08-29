@@ -453,21 +453,21 @@ function tableConfiguration(tab: AdminCatalogTab) {
         table: TABLE_BY_TAB.categorie,
         select: CATEGORY_SELECT,
         searchColumns: ["code", "name", "subtitle"],
-        orderColumns: ["sort_order", "name"],
+        orderColumns: ["sort_order", "name", "id"],
       };
     case "famiglie":
       return {
         table: TABLE_BY_TAB.famiglie,
         select: FAMILY_SELECT,
         searchColumns: ["source_code", "name", "subtitle"],
-        orderColumns: ["sort_order", "name"],
+        orderColumns: ["sort_order", "name", "id"],
       };
     case "componenti":
       return {
         table: TABLE_BY_TAB.componenti,
         select: COMPONENT_SELECT,
         searchColumns: ["name", "description"],
-        orderColumns: ["sort_order", "name"],
+        orderColumns: ["sort_order", "name", "id"],
       };
     case "varianti":
       return {
@@ -481,7 +481,7 @@ function tableConfiguration(tab: AdminCatalogTab) {
           "material",
           "connection",
         ],
-        orderColumns: ["sort_order", "fabtek_code"],
+        orderColumns: ["sort_order", "fabtek_code", "id"],
       };
   }
 }
@@ -686,6 +686,7 @@ export async function getAdminCatalogFormOptions(
         .select("id, name, is_active")
         .order("sort_order")
         .order("name")
+        .order("id")
         .range(from, to),
       relationOption,
     ) as AdminRelationOption[];
@@ -699,6 +700,7 @@ export async function getAdminCatalogFormOptions(
         .select("id, name, is_active")
         .order("sort_order")
         .order("name")
+        .order("id")
         .range(from, to),
       relationOption,
     ),
@@ -708,6 +710,7 @@ export async function getAdminCatalogFormOptions(
         .select(COMPONENT_OPTION_SELECT)
         .order("sort_order")
         .order("name")
+        .order("id")
         .range(from, to),
       componentOption,
     ),
@@ -716,6 +719,7 @@ export async function getAdminCatalogFormOptions(
         .from("units_of_measure")
         .select("id, code, name, is_active")
         .order("name")
+        .order("id")
         .range(from, to),
       unitOption,
     ),
