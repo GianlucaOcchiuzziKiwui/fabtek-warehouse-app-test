@@ -313,7 +313,7 @@ test("each tab selects only its list fields and variants embed all display relat
     {
       tab: "varianti",
       table: "item_variants",
-      select: "id,component_id,fabtek_code,oracle_sapio_code,description,diameter,material,connection,unit_of_measure_id,track_inventory,sort_order,is_active,component:components!inner(id,name,is_active,family:families!inner(id,name,is_active)),unit_of_measure:units_of_measure!inner(id,code,name,is_active),categories:item_variant_categories(category:categories!inner(id,name,is_active))",
+      select: "id,component_id,fabtek_code,oracle_sapio_code,description,diameter,material,connection,unit_of_measure_id,track_inventory,sort_order,is_active,component:components!inner(id,name,is_active,family:families!inner(id,name,is_active)),unit_of_measure:units_of_measure!inner(id,code,name,is_active),categories:item_variant_categories(category:categories!inner(id,code,name,is_active))",
       orders: ["sort_order", "fabtek_code", "id"],
     },
   ];
@@ -371,7 +371,7 @@ test("variant listing maps embedded component, family, unit and categories witho
           is_active: true,
         },
         categories: [{
-          category: { id: CATEGORY_ID, name: "Gas", is_active: true },
+          category: { id: CATEGORY_ID, code: "CAT-GAS", name: "Gas", is_active: true },
         }],
       }],
       error: null,
@@ -412,7 +412,7 @@ test("variant listing maps embedded component, family, unit and categories witho
       name: "Metri",
       isActive: true,
     },
-    categories: [{ id: CATEGORY_ID, name: "Gas", isActive: true }],
+    categories: [{ id: CATEGORY_ID, code: "CAT-GAS", name: "Gas", isActive: true }],
   });
   assert.deepEqual(calls[0].orders, [
     ["sort_order", null],
@@ -597,7 +597,7 @@ test("form options load no tables for groups, only families for components, and 
 test("form options map inactive parents as visible admin choices", async () => {
   const { client } = createSessionClient({
     categories: {
-      data: [{ id: CATEGORY_ID, name: "Gas", is_active: false }],
+      data: [{ id: CATEGORY_ID, code: "CAT-GAS", name: "Gas", is_active: false }],
       error: null,
     },
     components: {
@@ -622,7 +622,7 @@ test("form options map inactive parents as visible admin choices", async () => {
   );
 
   assert.deepEqual(result, {
-    categories: [{ id: CATEGORY_ID, name: "Gas", isActive: false }],
+    categories: [{ id: CATEGORY_ID, code: "CAT-GAS", name: "Gas", isActive: false }],
     families: [],
     components: [{
       id: COMPONENT_ID,
@@ -648,6 +648,7 @@ test("form options collect every PostgREST page instead of truncating at one tho
   }));
   const categories = Array.from({ length: 1_001 }, (_, index) => ({
     id: optionId(index + 2_000),
+    code: `CAT-${index + 1}`,
     name: `Categoria ${index + 1}`,
     is_active: true,
   }));

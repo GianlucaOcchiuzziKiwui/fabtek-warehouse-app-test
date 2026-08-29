@@ -76,7 +76,7 @@ const VARIANT_SELECT = `
   ),
   unit_of_measure:units_of_measure!inner(id, code, name, is_active),
   categories:item_variant_categories(
-    category:categories!inner(id, name, is_active)
+    category:categories!inner(id, code, name, is_active)
   )
 `;
 
@@ -162,6 +162,10 @@ export type AdminRelationOption = {
   isActive: boolean;
 };
 
+export type AdminCategoryOption = AdminRelationOption & {
+  code: string;
+};
+
 export type AdminComponentOption = AdminRelationOption & {
   familyId: string;
   family: AdminRelationOption;
@@ -193,7 +197,7 @@ export type AdminVariantRow = AdminCatalogBaseRow & {
   trackInventory: boolean;
   component: AdminComponentOption;
   unitOfMeasure: AdminUnitOption;
-  categories: AdminRelationOption[];
+  categories: AdminCategoryOption[];
 };
 
 export type AdminCatalogRow =
@@ -210,7 +214,7 @@ export type AdminCatalogPage = {
 };
 
 export type AdminCatalogFormOptions = {
-  categories: AdminRelationOption[];
+  categories: AdminCategoryOption[];
   families: AdminRelationOption[];
   components: AdminComponentOption[];
   unitsOfMeasure: AdminUnitOption[];
@@ -274,6 +278,13 @@ function relationOption(value: unknown): AdminRelationOption | null {
   return id && name && typeof row.is_active === "boolean"
     ? { id, name, isActive: row.is_active }
     : null;
+}
+
+function categoryOption(value: unknown): AdminCategoryOption | null {
+  if (!isRecord(value)) return null;
+  const base = relationOption(value);
+  const code = text(value.code);
+  return base && code ? { ...base, code } : null;
 }
 
 function componentOption(value: unknown): AdminComponentOption | null {
@@ -358,13 +369,13 @@ function mapComponent(value: unknown): AdminComponentRow | null {
     : null;
 }
 
-function mapCategories(value: unknown): AdminRelationOption[] | null {
+function mapCategories(value: unknown): AdminCategoryOption[] | null {
   if (!Array.isArray(value)) return null;
   const categories = value.map((relation) => (
-    isRecord(relation) ? relationOption(relation.category) : null
+    isRecord(relation) ? categoryOption(relation.category) : null
   ));
   return categories.every((category) => category !== null)
-    ? categories as AdminRelationOption[]
+    ? categories as AdminCategoryOption[]
     : null;
 }
 
@@ -669,8 +680,8 @@ export async function getAdminCatalogPage(
 
 async function loadOptions(
   loadPage: (from: number, to: number) => PromiseLike<QueryResponse>,
-  mapper: (value: unknown) => AdminRelationOption | AdminComponentOption | AdminUnitOption | null,
-): Promise<(AdminRelationOption | AdminComponentOption | AdminUnitOption)[]> {
+  mapper: (value: unknown) => AdminRelationOption | AdminCategoryOption | AdminComponentOption | AdminUnitOption | null,
+): Promise<(AdminRelationOption | AdminCategoryOption | AdminComponentOption | AdminUnitOption)[]> {
   let rows: unknown[];
   try {
     rows = await collectPaginatedRows(async (from, to) => {
@@ -687,7 +698,7 @@ async function loadOptions(
   if (options.some((option) => option === null)) {
     throw new AdminCatalogDataError();
   }
-  return options as (AdminRelationOption | AdminComponentOption | AdminUnitOption)[];
+  return options as (AdminRelationOption | AdminCategoryOption | AdminComponentOption | AdminUnitOption)[];
 }
 
 export async function getAdminCatalogFormOptions(
@@ -723,12 +734,12 @@ export async function getAdminCatalogFormOptions(
     loadOptions(
       (from, to) => client
         .from("categories")
-        .select("id, name, is_active")
+        .select("id, code, name, is_active")
         .order("sort_order")
         .order("name")
         .order("id")
         .range(from, to),
-      relationOption,
+      categoryOption,
     ),
     loadOptions(
       (from, to) => client
@@ -752,7 +763,7 @@ export async function getAdminCatalogFormOptions(
   ]);
 
   return {
-    categories: categories as AdminRelationOption[],
+    categories: categories as AdminCategoryOption[],
     families: [],
     components: components as AdminComponentOption[],
     unitsOfMeasure: unitsOfMeasure as AdminUnitOption[],

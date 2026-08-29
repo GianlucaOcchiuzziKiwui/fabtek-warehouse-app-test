@@ -225,6 +225,7 @@ const FAMILY_ID = "10000000-0000-4000-8000-000000000010";
 const COMPONENT_ID = "20000000-0000-4000-8000-000000000020";
 const UNIT_ID = "30000000-0000-4000-8000-000000000030";
 const CATEGORY_ID = "40000000-0000-4000-8000-000000000040";
+const SECOND_CATEGORY_ID = "50000000-0000-4000-8000-000000000050";
 const DIALOG_OVERRIDES = new Map([
   ["@/components/ui/dialog", {
     DialogHeader: ({ children }) => React.createElement("header", null, children),
@@ -379,12 +380,12 @@ test("variant form exposes every editable field and visibly selected categories"
         family: { id: FAMILY_ID, name: "Tubazioni", isActive: true },
       },
       unitOfMeasure: { id: UNIT_ID, code: "PZ", name: "Pezzi", isActive: true },
-      categories: [{ id: CATEGORY_ID, name: "Processo", isActive: true }],
+      categories: [{ id: CATEGORY_ID, code: "CAT-PRO", name: "Processo", isActive: true }],
     },
     options: {
       categories: [
-        { id: CATEGORY_ID, name: "Processo", isActive: true },
-        { id: FAMILY_ID, name: "Ricambi", isActive: false },
+        { id: CATEGORY_ID, code: "CAT-PRO", name: "Processo", isActive: true },
+        { id: FAMILY_ID, code: "CAT-RIC", name: "Ricambi", isActive: false },
       ],
       families: [],
       components: [{
@@ -469,7 +470,7 @@ test("variant category names without spaces cannot widen the mobile dialog", () 
   const markup = renderToStaticMarkup(React.createElement(CatalogVariantForm, {
     entity: null,
     options: {
-      categories: [{ id: CATEGORY_ID, name: longName, isActive: true }],
+      categories: [{ id: CATEGORY_ID, code: "CAT-LONG", name: longName, isActive: true }],
       families: [],
       components: [],
       unitsOfMeasure: [],
@@ -486,7 +487,7 @@ test("variant category names without spaces cannot widen the mobile dialog", () 
     onCancel() {},
   }));
 
-  assert.match(markup, new RegExp(`>${longName}<`, "u"));
+  assert.match(markup, new RegExp(`>CAT-LONG — ${longName}<`, "u"));
   assert.match(
     markup,
     /id="catalog-variant-categories-help" class="[^"]*min-w-0[^"]*break-words[^"]*\[overflow-wrap:anywhere\]/u,
@@ -498,7 +499,7 @@ test("variant category names without spaces cannot widen the mobile dialog", () 
   );
   assert.match(
     markup,
-    /<span class="[^"]*min-w-0[^"]*break-words[^"]*\[overflow-wrap:anywhere\][^"]*">A{160}<\/span>/u,
+    /<span class="[^"]*min-w-0[^"]*break-words[^"]*\[overflow-wrap:anywhere\][^"]*">CAT-LONG — A{160}<\/span>/u,
   );
 });
 
@@ -510,7 +511,7 @@ test("variant pending state stops spinner motion and uses a Unicode ellipsis", (
   const markup = renderToStaticMarkup(React.createElement(CatalogVariantForm, {
     entity: null,
     options: {
-      categories: [{ id: CATEGORY_ID, name: "Processo", isActive: true }],
+      categories: [{ id: CATEGORY_ID, code: "CAT-PRO", name: "Processo", isActive: true }],
       families: [],
       components: [],
       unitsOfMeasure: [],
@@ -531,6 +532,118 @@ test("variant pending state stops spinner motion and uses a Unicode ellipsis", (
   assert.match(submitButton, /class="[^"]*animate-spin[^"]*motion-reduce:animate-none/u);
   assert.match(submitButton, /Salvataggio…/u);
   assert.doesNotMatch(submitButton, /Salvataggio\.\.\./u);
+});
+
+test("same-name categories expose their codes and submit only the selected UUID", async () => {
+  const saves = [];
+  let transition;
+  const fakeReact = {
+    ...React,
+    useEffect() {},
+    useState(initialValue) {
+      return [typeof initialValue === "function" ? initialValue() : initialValue, () => {}];
+    },
+    useTransition() {
+      return [false, (callback) => { transition = Promise.resolve(callback()); }];
+    },
+  };
+  const overrides = new Map([
+    ["react", fakeReact],
+    ["sonner", { toast: { success() {} } }],
+    ["@/components/ui/dialog", {
+      Dialog: ({ children }) => children,
+      DialogContent: ({ children }) => children,
+      DialogHeader: ({ children }) => children,
+      DialogTitle: ({ children }) => children,
+      DialogDescription: ({ children }) => children,
+      DialogFooter: ({ children }) => children,
+    }],
+  ]);
+  const { CatalogVariantDialog } = loadProjectModule(
+    "components/admin/catalog/catalog-variant-dialog.tsx",
+    overrides,
+  );
+  const sharedCategory = { name: "Processo", isActive: true };
+  const categories = [
+    { ...sharedCategory, id: CATEGORY_ID, code: "CAT-A" },
+    { ...sharedCategory, id: SECOND_CATEGORY_ID, code: "CAT-B" },
+  ];
+  const entity = {
+    kind: "variante",
+    id: FAMILY_ID,
+    componentId: COMPONENT_ID,
+    fabtekCode: "FT-001",
+    oracleSapioCode: null,
+    description: "Tubo PTFE",
+    diameter: null,
+    material: "PTFE",
+    connection: "1/2 NPT",
+    unitOfMeasureId: UNIT_ID,
+    trackInventory: false,
+    sortOrder: 1,
+    isActive: true,
+    component: {
+      id: COMPONENT_ID,
+      name: "Tubo",
+      isActive: true,
+      familyId: FAMILY_ID,
+      family: { id: FAMILY_ID, name: "Tubazioni", isActive: true },
+    },
+    unitOfMeasure: { id: UNIT_ID, code: "PZ", name: "Pezzi", isActive: true },
+    categories: [categories[1]],
+  };
+  const tree = CatalogVariantDialog({
+    open: true,
+    onOpenChange() {},
+    entity,
+    options: {
+      categories,
+      families: [],
+      components: [entity.component],
+      unitsOfMeasure: [entity.unitOfMeasure],
+    },
+    async save(input) {
+      saves.push(input);
+      return { ok: true, data: { id: FAMILY_ID } };
+    },
+  });
+  const content = tree.props.children;
+  const form = content.props.children;
+  const markup = renderToStaticMarkup(form);
+
+  assert.match(markup, /CAT-A — Processo/u);
+  assert.match(markup, /CAT-B — Processo/u);
+  const selectedInput = markup.match(
+    /<input[^>]*name="categoryIds"[^>]*checked=""[^>]*value="50000000-0000-4000-8000-000000000050"[^>]*>/u,
+  )?.[0] ?? "";
+  assert.match(selectedInput, /type="checkbox"/u);
+
+  const originalFormData = globalThis.FormData;
+  globalThis.FormData = class FakeFormData {
+    constructor(formValue) { this.form = formValue; }
+    get(name) { return this.form[name] ?? null; }
+  };
+  try {
+    form.props.onSubmit({
+      preventDefault() {},
+      currentTarget: {
+        componentId: COMPONENT_ID,
+        fabtekCode: "FT-001",
+        oracleSapioCode: "",
+        description: "Tubo PTFE",
+        diameter: "",
+        material: "PTFE",
+        connection: "1/2 NPT",
+        unitOfMeasureId: UNIT_ID,
+        sortOrder: "1",
+      },
+    });
+    await transition;
+  } finally {
+    globalThis.FormData = originalFormData;
+  }
+
+  assert.deepEqual(saves[0].categoryIds, [SECOND_CATEGORY_ID]);
 });
 
 test("successful entity save shows a toast and closes the controlled dialog", async () => {
@@ -620,6 +733,7 @@ test("referenced delete response changes the primary action to an explicit deact
     entityName: "Valvole",
     mode: "delete",
     referenced: true,
+    currentIsActive: true,
     pending: false,
     error: null,
     onCancel() {},
@@ -632,6 +746,72 @@ test("referenced delete response changes the primary action to an explicit deact
   assert.match(markup, /<button[^>]*type="button"[^>]*>Annulla/u);
   assert.match(markup, /<button[^>]*type="button"[^>]*>Disattiva/u);
   assert.doesNotMatch(markup, />Elimina</u);
+});
+
+test("a referenced inactive entity can only close and cannot execute a no-op deactivation", async () => {
+  const harness = createHookHarness();
+  const deleteCalls = [];
+  const deactivateCalls = [];
+  function AlertDialog({ children }) { return children; }
+  function AlertDialogContent({ children }) { return children; }
+  const overrides = new Map([
+    ["react", harness.react],
+    ["@/components/ui/alert-dialog", {
+      AlertDialog,
+      AlertDialogContent,
+      AlertDialogHeader: ({ children }) => children,
+      AlertDialogTitle: ({ children }) => children,
+      AlertDialogDescription: ({ children }) => children,
+      AlertDialogFooter: ({ children }) => children,
+      AlertDialogCancel: ({ children }) => children,
+    }],
+  ]);
+  const { CatalogDeleteDialog } = loadProjectModule(
+    "components/admin/catalog/catalog-delete-dialog.tsx",
+    overrides,
+  );
+  const props = {
+    open: true,
+    onOpenChange() {},
+    entity: "categorie",
+    entityId: FAMILY_ID,
+    entityName: "Pompe",
+    mode: "delete",
+    currentIsActive: false,
+    async deleteEntity(input) {
+      deleteCalls.push(input);
+      return {
+        ok: false,
+        error: {
+          code: "CATALOG_ENTITY_REFERENCED",
+          message: "La voce è utilizzata e non può essere eliminata.",
+        },
+      };
+    },
+    async setActive(input) {
+      deactivateCalls.push(input);
+      return { ok: true, data: { id: FAMILY_ID } };
+    },
+  };
+
+  let rendered = harness.render(CatalogDeleteDialog, props);
+  rendered.flushEffects();
+  let body = rendered.tree.props.children.props.children;
+  body.props.onConfirm();
+  await Promise.all(harness.transitions);
+
+  rendered = harness.render(CatalogDeleteDialog, props);
+  body = rendered.tree.props.children.props.children;
+  const markup = renderToStaticMarkup(body);
+  assert.match(markup, /già inattiva/u);
+  assert.match(markup, />Chiudi</u);
+  assert.doesNotMatch(markup, />Disattiva</u);
+  assert.doesNotMatch(markup, />Elimina</u);
+
+  body.props.onConfirm();
+  await Promise.all(harness.transitions);
+  assert.equal(deleteCalls.length, 1);
+  assert.deepEqual(deactivateCalls, []);
 });
 
 test("catalog management exposes group CRUD actions in desktop and mobile layouts", () => {
@@ -824,7 +1004,7 @@ test("variant rows expose CRUD controls and open the variant editor with its opt
       family: { id: FAMILY_ID, name: "Tubazioni", isActive: true },
     },
     unitOfMeasure: { id: UNIT_ID, code: "PZ", name: "Pezzi", isActive: true },
-    categories: [{ id: CATEGORY_ID, name: "Processo", isActive: true }],
+    categories: [{ id: CATEGORY_ID, code: "CAT-PRO", name: "Processo", isActive: true }],
   };
   const options = {
     categories: variant.categories,
@@ -1014,6 +1194,7 @@ test("delete confirmation keeps its originating table across a query change", as
   rendered = harness.render(CatalogManagement, managementFixture("famiglie", family));
   const confirmation = findElement(rendered.tree, (element) => element.type === DeleteDialog);
   assert.equal(confirmation.props.entity, "categorie");
+  assert.equal(confirmation.props.currentIsActive, true);
   await confirmation.props.deleteEntity({
     entity: confirmation.props.entity,
     id: confirmation.props.entityId,
@@ -1129,6 +1310,7 @@ test("delete dialog marks its cancel target and explicitly focuses it on open", 
     entity: "categorie",
     entityId: FAMILY_ID,
     entityName: "Pompe",
+    currentIsActive: true,
     mode: "delete",
     async deleteEntity() { return { ok: true, data: { id: FAMILY_ID } }; },
     async setActive() { return { ok: true, data: { id: FAMILY_ID } }; },
@@ -1172,6 +1354,7 @@ test("delete dialog cannot close through cancel while its mutation is pending", 
     entity: "categorie",
     entityId: FAMILY_ID,
     entityName: "Pompe",
+    currentIsActive: true,
     mode: "delete",
     async deleteEntity() { return { ok: true, data: { id: FAMILY_ID } }; },
     async setActive() { return { ok: true, data: { id: FAMILY_ID } }; },

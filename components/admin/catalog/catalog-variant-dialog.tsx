@@ -203,7 +203,7 @@ export function CatalogVariantForm({
         >
           Seleziona almeno una categoria. {selectedSummary}
           {selectedCategories.length > 0
-            ? `: ${selectedCategories.map((category) => category.name).join(", ")}`
+            ? `: ${selectedCategories.map((category) => `${category.code} — ${category.name}`).join(", ")}`
             : "."}
         </p>
         {options.categories.length > 0 ? (
@@ -229,7 +229,7 @@ export function CatalogVariantForm({
                     className="size-4 shrink-0 accent-primary"
                   />
                   <span className="min-w-0 break-words [overflow-wrap:anywhere]">
-                    {category.isActive ? category.name : `${category.name} (inattiva)`}
+                    {category.code} — {category.name}{category.isActive ? "" : " (inattiva)"}
                   </span>
                 </label>
               );

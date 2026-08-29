@@ -193,7 +193,7 @@ function RowDetails({ item }: { item: AdminCatalogRow }) {
       </p>
       <p className="break-words text-xs text-muted-foreground">
         {item.categories.length > 0
-          ? item.categories.map((category) => category.name).join(", ")
+          ? item.categories.map((category) => `${category.code} — ${category.name}`).join(", ")
           : "Nessuna categoria"}
         {` · ${item.unitOfMeasure.code}`}
       </p>
@@ -641,6 +641,7 @@ export function CatalogManagement({
           entity={confirmation.entityType}
           entityId={confirmation.item.id}
           entityName={entityName(confirmation.item)}
+          currentIsActive={confirmation.item.isActive}
           mode={confirmation.mode}
           blocked={mutationPending}
           deleteEntity={(input) => runLockedMutation(
