@@ -41,11 +41,7 @@ function AppShell({
         <div className="mx-auto flex min-h-16 w-full max-w-[1128px] items-center gap-4 px-4 py-3 sm:px-6">
           <Brand />
           <div className="ml-auto flex min-w-0 items-center gap-2 sm:gap-3">
-            {showRequestCart ? (
-              <Suspense fallback={null}>
-                <RequestCartHeader />
-              </Suspense>
-            ) : null}
+            
             {fullName ? (
               <div className="flex min-w-0 items-center gap-2">
                 <span className="max-w-20 truncate text-xs text-[#cfe0f5] sm:max-w-64 sm:text-sm">
@@ -80,7 +76,7 @@ function AppShell({
             )}
           </div>
         </div>
-        <AppNavigation isAdmin={Boolean(isAdmin)} />
+        <AppNavigation showRequestCart={showRequestCart} isAdmin={Boolean(isAdmin)} />
       </header>
 
       <main data-print-shell="main" className="mx-auto w-full max-w-[1128px] flex-1 px-4 py-8 sm:px-6">

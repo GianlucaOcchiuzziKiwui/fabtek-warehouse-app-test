@@ -10,14 +10,14 @@ const colors = {
 
 const styles = StyleSheet.create({
   page: { paddingTop: 42, paddingHorizontal: 34, paddingBottom: 48, fontFamily: "IBM Plex Sans", fontSize: 8, color: colors.navy },
-  header: { borderBottomWidth: 2, borderBottomColor: colors.ochre, paddingBottom: 10, marginBottom: 14 },
+  header: { borderBottomWidth: 2, borderBottomColor: colors.navy, paddingBottom: 10, marginBottom: 14 },
   brand: { fontSize: 18, fontWeight: 600, color: colors.navy },
-  title: { marginTop: 4, fontSize: 12, fontWeight: 600, color: colors.ochre },
+  title: { marginTop: 4, fontSize: 12, fontWeight: 600, color: colors.navy },
   section: { marginBottom: 14 },
-  sectionTitle: { fontSize: 9, fontWeight: 600, color: colors.ochre, marginBottom: 5 },
+  sectionTitle: { fontSize: 9, fontWeight: 600, color: colors.navy, marginBottom: 5 },
   requestGrid: { flexDirection: "row", flexWrap: "wrap", borderWidth: 1, borderColor: colors.lightGray },
   requestCell: { width: "50%", padding: 5, borderBottomWidth: 1, borderBottomColor: colors.lightGray },
-  requestLabel: { color: colors.ochre, fontSize: 7, marginBottom: 1 },
+  requestLabel: { color: colors.navy, fontSize: 7, marginBottom: 1 },
   table: { borderWidth: 1, borderColor: colors.lightGray },
   tableHeader: { flexDirection: "row", backgroundColor: colors.navy, color: colors.lightGray, fontWeight: 600 },
   tableRow: { flexDirection: "row", borderTopWidth: 1, borderTopColor: colors.lightGray },
@@ -33,8 +33,8 @@ const styles = StyleSheet.create({
   finalQuantity: { width: "11.5%" },
   finalLastQuantity: { width: "12%", borderRightWidth: 0 },
   history: { padding: 4, paddingLeft: 8, backgroundColor: colors.lightGray, borderTopWidth: 1, borderTopColor: colors.lightGray },
-  warning: { borderWidth: 1, borderColor: colors.ochre, padding: 7, color: colors.ochre, marginTop: 2 },
-  footer: { position: "absolute", left: 34, right: 34, bottom: 20, flexDirection: "row", justifyContent: "space-between", color: colors.ochre, fontSize: 7 },
+  warning: { borderWidth: 1, borderColor: colors.navy, padding: 7, color: colors.navy, marginTop: 2 },
+  footer: { position: "absolute", left: 34, right: 34, bottom: 20, flexDirection: "row", justifyContent: "space-between", color: colors.navy, fontSize: 7 },
 });
 
 function PdfHeader({ title }: { title: string }) {
@@ -119,7 +119,7 @@ function DraftWarning() {
 }
 
 function PdfFooter() {
-  return <View style={styles.footer} fixed><Text>Fabtek · Gestione materiali</Text><Text render={({ pageNumber, totalPages }) => `Pagina ${pageNumber} di ${totalPages}`} /></View>;
+  return <View style={styles.footer} fixed><Text>Fabtek  | Warehouse Management | v.{process.env.NEXT_PUBLIC_APP_VERSION} | {new Date().toLocaleDateString("it-IT")}</Text><Text render={({ pageNumber, totalPages }) => `Pagina ${pageNumber} di ${totalPages}`} /></View>;
 }
 
 export function FabtekPdf({ document }: { document: PdfDocument }) {
