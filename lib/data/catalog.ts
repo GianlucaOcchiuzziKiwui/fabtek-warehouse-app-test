@@ -18,6 +18,7 @@ import {
   type StockView,
 } from "@/lib/data/catalog-mappers";
 import { createClient } from "@/lib/supabase/server";
+import { applyCatalogVariantOrdering } from "@/lib/data/admin-catalog";
 
 export type {
   CatalogFilterOptions,
@@ -400,19 +401,19 @@ export async function searchCatalog(
   const supabase = await createClient();
   const from = (normalized.page - 1) * PAGE_SIZE;
 
-  let catalogQuery = supabase
-    .from("item_variants")
-    .select(CATALOG_SELECT, { count: "exact" })
-    .eq("is_active", true)
-    .eq("component.is_active", true)
-    .eq("component.family.is_active", true)
-    .eq("unit_of_measure.is_active", true)
-    .eq("categories.category.is_active", true)
-    .eq("suppliers.supplier.is_active", true)
-    .eq("assets.is_active", true)
-    .eq("assets.kind", "datasheet")
-    .order("fabtek_code")
-    .range(from, from + PAGE_SIZE - 1);
+  let catalogQuery = applyCatalogVariantOrdering(
+    supabase
+      .from("item_variants")
+      .select(CATALOG_SELECT, { count: "exact" })
+      .eq("is_active", true)
+      .eq("component.is_active", true)
+      .eq("component.family.is_active", true)
+      .eq("unit_of_measure.is_active", true)
+      .eq("categories.category.is_active", true)
+      .eq("suppliers.supplier.is_active", true)
+      .eq("assets.is_active", true)
+      .eq("assets.kind", "datasheet"),
+  ).range(from, from + PAGE_SIZE - 1);
 
   if (normalized.query) {
     const pattern = escapePostgrestSearchPattern(normalized.query);
