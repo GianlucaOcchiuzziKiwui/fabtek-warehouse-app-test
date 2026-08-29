@@ -5,6 +5,7 @@ import {
   saveCategoryAction,
   saveComponentAction,
   saveFamilyAction,
+  saveVariantAction,
   setCatalogEntityActiveAction,
 } from "@/app/(app)/admin/catalogo/actions";
 import { CatalogDeleteDialog } from "@/components/admin/catalog/catalog-delete-dialog";
@@ -13,6 +14,7 @@ import {
   type EditableCatalogEntity,
   type EditableCatalogEntityType,
 } from "@/components/admin/catalog/catalog-entity-dialog";
+import { CatalogVariantDialog } from "@/components/admin/catalog/catalog-variant-dialog";
 import { CatalogIcon } from "@/components/catalog/catalog-icon";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
@@ -29,6 +31,7 @@ import type {
   AdminCatalogFormOptions,
   AdminCatalogPage,
   AdminCatalogRow,
+  AdminVariantRow,
 } from "@/lib/data/admin-catalog";
 import { Loader2, Plus, RotateCcw, Search } from "lucide-react";
 import Link from "next/link";
@@ -202,10 +205,28 @@ function entityName(item: AdminCatalogRow) {
   return item.kind === "variante" ? item.fabtekCode : item.name;
 }
 
-function entityTypeForItem(item: EditableCatalogEntity): EditableCatalogEntityType {
+type EditableCatalogItem = EditableCatalogEntity | AdminVariantRow;
+
+type CatalogEditor =
+  | {
+      entityType: EditableCatalogEntityType;
+      entity: EditableCatalogEntity | null;
+      formOptions: AdminCatalogFormOptions;
+    }
+  | {
+      entityType: "varianti";
+      entity: AdminVariantRow | null;
+      formOptions: AdminCatalogFormOptions;
+    };
+
+function entityTypeForItem(item: EditableCatalogEntity): EditableCatalogEntityType;
+function entityTypeForItem(item: AdminVariantRow): "varianti";
+function entityTypeForItem(item: EditableCatalogItem): AdminCatalogTab;
+function entityTypeForItem(item: EditableCatalogItem): AdminCatalogTab {
   if (item.kind === "categoria") return "categorie";
   if (item.kind === "famiglia") return "famiglie";
-  return "componenti";
+  if (item.kind === "componente") return "componenti";
+  return "varianti";
 }
 
 function RowActions({
@@ -219,11 +240,10 @@ function RowActions({
   item: AdminCatalogRow;
   pending: boolean;
   showProgress: boolean;
-  onEdit: (item: EditableCatalogEntity) => void;
-  onToggle: (item: EditableCatalogEntity) => void;
-  onDelete: (item: EditableCatalogEntity) => void;
+  onEdit: (item: EditableCatalogItem) => void;
+  onToggle: (item: EditableCatalogItem) => void;
+  onDelete: (item: EditableCatalogItem) => void;
 }) {
-  if (item.kind === "variante") return null;
   return (
     <div className="flex flex-wrap gap-2 md:flex-col md:items-stretch">
       <Button
@@ -269,11 +289,10 @@ function CatalogRows({
   result: AdminCatalogPage;
   mutationPending: boolean;
   mutationItemId: string | null;
-  onEdit: (item: EditableCatalogEntity) => void;
-  onToggle: (item: EditableCatalogEntity) => void;
-  onDelete: (item: EditableCatalogEntity) => void;
+  onEdit: (item: EditableCatalogItem) => void;
+  onToggle: (item: EditableCatalogItem) => void;
+  onDelete: (item: EditableCatalogItem) => void;
 }) {
-  const manageable = result.items.some((item) => item.kind !== "variante");
   return (
     <div className="space-y-5">
       <p className="text-sm text-muted-foreground">
@@ -288,7 +307,7 @@ function CatalogRows({
               <th scope="col" className="w-[34%] px-4 py-3">Dettagli</th>
               <th scope="col" className="w-[9%] px-4 py-3">Ordine</th>
               <th scope="col" className="w-[11%] px-4 py-3">Stato</th>
-              {manageable ? <th scope="col" className="w-[18%] px-4 py-3">Azioni</th> : null}
+              <th scope="col" className="w-[18%] px-4 py-3">Azioni</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
@@ -300,18 +319,16 @@ function CatalogRows({
                 <td className="px-4 py-4 align-top"><RowDetails item={item} /></td>
                 <td className="px-4 py-4 align-top tabular-nums">{item.sortOrder}</td>
                 <td className="px-4 py-4 align-top"><CatalogStatusBadge isActive={item.isActive} /></td>
-                {manageable ? (
-                  <td className="px-4 py-4 align-top">
-                    <RowActions
-                      item={item}
-                      pending={mutationPending}
-                      showProgress={mutationPending && mutationItemId === item.id}
-                      onEdit={onEdit}
-                      onToggle={onToggle}
-                      onDelete={onDelete}
-                    />
-                  </td>
-                ) : null}
+                <td className="px-4 py-4 align-top">
+                  <RowActions
+                    item={item}
+                    pending={mutationPending}
+                    showProgress={mutationPending && mutationItemId === item.id}
+                    onEdit={onEdit}
+                    onToggle={onToggle}
+                    onDelete={onDelete}
+                  />
+                </td>
               </tr>
             ))}
           </tbody>
@@ -329,18 +346,16 @@ function CatalogRows({
               <RowDetails item={item} />
             </div>
             <p className="mt-4 text-xs text-muted-foreground">Ordine: {item.sortOrder}</p>
-            {item.kind !== "variante" ? (
-              <div className="mt-4 border-t border-border pt-4">
-                <RowActions
-                  item={item}
-                  pending={mutationPending}
-                  showProgress={mutationPending && mutationItemId === item.id}
-                  onEdit={onEdit}
-                  onToggle={onToggle}
-                  onDelete={onDelete}
-                />
-              </div>
-            ) : null}
+            <div className="mt-4 border-t border-border pt-4">
+              <RowActions
+                item={item}
+                pending={mutationPending}
+                showProgress={mutationPending && mutationItemId === item.id}
+                onEdit={onEdit}
+                onToggle={onToggle}
+                onDelete={onDelete}
+              />
+            </div>
           </article>
         ))}
       </div>
@@ -391,17 +406,10 @@ export function CatalogManagement({
   loadError?: boolean;
 }) {
   const content = TAB_CONTENT[query.tab];
-  const editableType: EditableCatalogEntityType | null = query.tab === "varianti"
-    ? null
-    : query.tab;
-  const [editor, setEditor] = useState<{
-    entityType: EditableCatalogEntityType;
-    entity: EditableCatalogEntity | null;
-    families: AdminCatalogFormOptions["families"];
-  } | null>(null);
+  const [editor, setEditor] = useState<CatalogEditor | null>(null);
   const [confirmation, setConfirmation] = useState<{
-    entityType: EditableCatalogEntityType;
-    item: EditableCatalogEntity;
+    entityType: AdminCatalogTab;
+    item: EditableCatalogItem;
     mode: "delete" | "deactivate";
   } | null>(null);
   const mutationLockRef = useRef(false);
@@ -445,20 +453,28 @@ export function CatalogManagement({
   }
 
   function createEntity() {
-    if (!editableType || mutationLockRef.current) return;
-    setEditor({ entityType: editableType, entity: null, families: formOptions.families });
+    if (mutationLockRef.current) return;
+    if (query.tab === "varianti") {
+      setEditor({ entityType: "varianti", entity: null, formOptions });
+      return;
+    }
+    setEditor({ entityType: query.tab, entity: null, formOptions });
   }
 
-  function editEntity(item: EditableCatalogEntity) {
+  function editEntity(item: EditableCatalogItem) {
     if (mutationLockRef.current) return;
+    if (item.kind === "variante") {
+      setEditor({ entityType: "varianti", entity: item, formOptions });
+      return;
+    }
     setEditor({
       entityType: entityTypeForItem(item),
       entity: item,
-      families: formOptions.families,
+      formOptions,
     });
   }
 
-  function toggleEntity(item: EditableCatalogEntity) {
+  function toggleEntity(item: EditableCatalogItem) {
     if (mutationLockRef.current) return;
     const entityType = entityTypeForItem(item);
     if (item.isActive) {
@@ -511,8 +527,7 @@ export function CatalogManagement({
           </div>
           <Button
             type="button"
-            disabled={!editableType || mutationPending}
-            title={editableType ? undefined : "La gestione varianti sarà disponibile nel passaggio successivo"}
+            disabled={mutationPending}
             onClick={createEntity}
           >
             <Plus aria-hidden="true" />
@@ -589,14 +604,27 @@ export function CatalogManagement({
         {result ? <CatalogPagination query={query} result={result} /> : null}
       </section>
 
-      {editor ? (
+      {editor?.entityType === "varianti" ? (
+        <CatalogVariantDialog
+          key={`varianti-${editor.entity?.id ?? "new"}`}
+          open
+          onOpenChange={(open) => !open && setEditor(null)}
+          entity={editor.entity}
+          options={editor.formOptions}
+          blocked={mutationPending}
+          save={(input) => runLockedMutation(
+            editor.entity?.id ?? "new-varianti",
+            () => saveVariantAction(input),
+          )}
+        />
+      ) : editor ? (
         <CatalogEntityDialog
           key={`${editor.entityType}-${editor.entity?.id ?? "new"}`}
           open
           onOpenChange={(open) => !open && setEditor(null)}
           entityType={editor.entityType}
           entity={editor.entity}
-          families={editor.families}
+          families={editor.formOptions.families}
           blocked={mutationPending}
           save={(input) => runLockedMutation(
             editor.entity?.id ?? `new-${editor.entityType}`,

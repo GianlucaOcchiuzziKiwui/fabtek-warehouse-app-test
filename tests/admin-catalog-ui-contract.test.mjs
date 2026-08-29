@@ -222,6 +222,9 @@ test("dialog adapters retain Radix controlled-root and accessible content primit
 });
 
 const FAMILY_ID = "10000000-0000-4000-8000-000000000010";
+const COMPONENT_ID = "20000000-0000-4000-8000-000000000020";
+const UNIT_ID = "30000000-0000-4000-8000-000000000030";
+const CATEGORY_ID = "40000000-0000-4000-8000-000000000040";
 const DIALOG_OVERRIDES = new Map([
   ["@/components/ui/dialog", {
     DialogHeader: ({ children }) => React.createElement("header", null, children),
@@ -346,6 +349,86 @@ test("entity form announces errors, disables submission while pending and keeps 
   assert.match(markup, /<button[^>]*type="submit"[^>]*disabled/u);
   assert.match(markup, /Salvataggio/u);
   assert.match(markup, /<button[^>]*type="button"[^>]*>Annulla/u);
+});
+
+test("variant form exposes every editable field and visibly selected categories", () => {
+  const { CatalogVariantForm } = loadProjectModule(
+    "components/admin/catalog/catalog-variant-dialog.tsx",
+    DIALOG_OVERRIDES,
+  );
+  const markup = renderToStaticMarkup(React.createElement(CatalogVariantForm, {
+    entity: {
+      kind: "variante",
+      id: FAMILY_ID,
+      componentId: COMPONENT_ID,
+      fabtekCode: "FT-001",
+      oracleSapioCode: "ORA-01",
+      description: "Tubo PTFE",
+      diameter: "12 mm",
+      material: "PTFE",
+      connection: "1/2 NPT",
+      unitOfMeasureId: UNIT_ID,
+      trackInventory: true,
+      sortOrder: 4,
+      isActive: false,
+      component: {
+        id: COMPONENT_ID,
+        name: "Tubo",
+        isActive: true,
+        familyId: FAMILY_ID,
+        family: { id: FAMILY_ID, name: "Tubazioni", isActive: true },
+      },
+      unitOfMeasure: { id: UNIT_ID, code: "PZ", name: "Pezzi", isActive: true },
+      categories: [{ id: CATEGORY_ID, name: "Processo", isActive: true }],
+    },
+    options: {
+      categories: [
+        { id: CATEGORY_ID, name: "Processo", isActive: true },
+        { id: FAMILY_ID, name: "Ricambi", isActive: false },
+      ],
+      families: [],
+      components: [{
+        id: COMPONENT_ID,
+        name: "Tubo",
+        isActive: true,
+        familyId: FAMILY_ID,
+        family: { id: FAMILY_ID, name: "Tubazioni", isActive: true },
+      }],
+      unitsOfMeasure: [{ id: UNIT_ID, code: "PZ", name: "Pezzi", isActive: true }],
+    },
+    categoryIds: [CATEGORY_ID],
+    isActive: false,
+    trackInventory: true,
+    pending: false,
+    error: null,
+    onCategoryChange() {},
+    onActiveChange() {},
+    onInventoryChange() {},
+    onSubmit() {},
+    onCancel() {},
+  }));
+
+  assert.match(markup, /Modifica variante/u);
+  assert.match(markup, /<label[^>]*for="catalog-variant-component"[^>]*>Componente/u);
+  assert.match(markup, /<label[^>]*for="catalog-variant-fabtek-code"[^>]*>Codice Fabtek/u);
+  assert.match(markup, /<label[^>]*for="catalog-variant-oracle-code"[^>]*>Codice Oracle\/SAPIO/u);
+  assert.match(markup, /<label[^>]*for="catalog-variant-description"[^>]*>Descrizione/u);
+  assert.match(markup, /<label[^>]*for="catalog-variant-diameter"[^>]*>Diametro/u);
+  assert.match(markup, /<label[^>]*for="catalog-variant-material"[^>]*>Materiale/u);
+  assert.match(markup, /<label[^>]*for="catalog-variant-connection"[^>]*>Connessione/u);
+  assert.match(markup, /<label[^>]*for="catalog-variant-unit"[^>]*>Unità di misura/u);
+  assert.match(markup, /<fieldset[^>]*aria-describedby="catalog-variant-categories-help"/u);
+  assert.match(markup, /<legend[^>]*>Categorie/u);
+  const selectedCategoryInput = markup.match(
+    /<input[^>]*name="categoryIds"[^>]*checked=""[^>]*value="40000000-0000-4000-8000-000000000040"[^>]*>/u,
+  )?.[0] ?? "";
+  assert.match(selectedCategoryInput, /type="checkbox"/u);
+  assert.match(markup, /1 categoria selezionata/u);
+  assert.match(markup, /Processo/u);
+  assert.match(markup, /Ricambi \(inattiva\)/u);
+  assert.match(markup, /<label[^>]*for="catalog-variant-track-inventory"/u);
+  assert.match(markup, /<label[^>]*for="catalog-variant-sort-order"[^>]*>Ordine/u);
+  assert.match(markup, /<label[^>]*for="catalog-variant-active"/u);
 });
 
 test("successful entity save shows a toast and closes the controlled dialog", async () => {
@@ -586,6 +669,88 @@ function managementFixture(tab, item) {
     formOptions: { categories: [], families: [], components: [], unitsOfMeasure: [] },
   };
 }
+
+test("variant rows expose CRUD controls and open the variant editor with its options", async () => {
+  const harness = createHookHarness();
+  const calls = [];
+  function Link({ href, children, ...props }) {
+    return React.createElement("a", { href, ...props }, children);
+  }
+  function EntityDialog() { return null; }
+  function VariantDialog() { return null; }
+  const overrides = new Map([
+    ["react", harness.react],
+    ["next/link", Link],
+    ["@/app/(app)/admin/catalogo/actions", {
+      async saveCategoryAction() { return { ok: true, data: { id: FAMILY_ID } }; },
+      async saveFamilyAction() { return { ok: true, data: { id: FAMILY_ID } }; },
+      async saveComponentAction() { return { ok: true, data: { id: FAMILY_ID } }; },
+      async saveVariantAction(input) {
+        calls.push(input);
+        return { ok: true, data: { id: FAMILY_ID } };
+      },
+      async deleteCatalogEntityAction() { return { ok: true, data: { id: FAMILY_ID } }; },
+      async setCatalogEntityActiveAction() { return { ok: true, data: { id: FAMILY_ID } }; },
+    }],
+    ["@/components/admin/catalog/catalog-entity-dialog", { CatalogEntityDialog: EntityDialog }],
+    ["@/components/admin/catalog/catalog-variant-dialog", { CatalogVariantDialog: VariantDialog }],
+    ["@/components/admin/catalog/catalog-delete-dialog", { CatalogDeleteDialog() { return null; } }],
+  ]);
+  const { CatalogManagement } = loadProjectModule(
+    "components/admin/catalog/catalog-management.tsx",
+    overrides,
+  );
+  const variant = {
+    kind: "variante",
+    id: FAMILY_ID,
+    componentId: COMPONENT_ID,
+    fabtekCode: "FT-001",
+    oracleSapioCode: null,
+    description: "Tubo PTFE",
+    diameter: null,
+    material: "PTFE",
+    connection: "1/2 NPT",
+    unitOfMeasureId: UNIT_ID,
+    trackInventory: false,
+    sortOrder: 1,
+    isActive: true,
+    component: {
+      id: COMPONENT_ID,
+      name: "Tubo",
+      isActive: true,
+      familyId: FAMILY_ID,
+      family: { id: FAMILY_ID, name: "Tubazioni", isActive: true },
+    },
+    unitOfMeasure: { id: UNIT_ID, code: "PZ", name: "Pezzi", isActive: true },
+    categories: [{ id: CATEGORY_ID, name: "Processo", isActive: true }],
+  };
+  const options = {
+    categories: variant.categories,
+    families: [],
+    components: [variant.component],
+    unitsOfMeasure: [variant.unitOfMeasure],
+  };
+  const props = {
+    ...managementFixture("varianti", variant),
+    formOptions: options,
+  };
+
+  let rendered = harness.render(CatalogManagement, props);
+  rendered.flushEffects();
+  let rows = findElement(rendered.tree, (element) => element.type.name === "CatalogRows");
+  const rowMarkup = renderToStaticMarkup(rows.type(rows.props));
+  assert.match(rowMarkup, />Modifica</u);
+  assert.match(rowMarkup, />Disattiva</u);
+  assert.match(rowMarkup, />Elimina</u);
+
+  rows.props.onEdit(variant);
+  rendered = harness.render(CatalogManagement, props);
+  const dialog = findElement(rendered.tree, (element) => element.type === VariantDialog);
+  assert.equal(dialog.props.entity, variant);
+  assert.equal(dialog.props.options, options);
+  await dialog.props.save({ id: FAMILY_ID, fabtekCode: "FT-001" });
+  assert.deepEqual(calls, [{ id: FAMILY_ID, fabtekCode: "FT-001" }]);
+});
 
 test("open editor keeps its originating entity across Back/Forward and then resets", async () => {
   const harness = createHookHarness();

@@ -7,6 +7,9 @@ import { transformSync } from "next/dist/build/swc/index.js";
 const projectRequire = createRequire(import.meta.url);
 const projectRoot = process.cwd();
 const ID = "10000000-0000-4000-8000-000000000001";
+const COMPONENT_ID = "20000000-0000-4000-8000-000000000002";
+const UNIT_ID = "30000000-0000-4000-8000-000000000003";
+const CATEGORY_ID = "40000000-0000-4000-8000-000000000004";
 
 function loadProjectModule(relativePath, overrides = new Map(), cache = new Map()) {
   const filename = path.resolve(projectRoot, relativePath);
@@ -69,6 +72,25 @@ function validCategory(overrides = {}) {
   };
 }
 
+function validVariant(overrides = {}) {
+  return {
+    id: null,
+    componentId: COMPONENT_ID,
+    fabtekCode: " FT-001 ",
+    oracleSapioCode: " ORA-01 ",
+    description: " Tubo PTFE ",
+    diameter: " 12 mm ",
+    material: " PTFE ",
+    connection: " 1/2 NPT ",
+    unitOfMeasureId: UNIT_ID,
+    categoryIds: [CATEGORY_ID],
+    trackInventory: false,
+    sortOrder: "4",
+    isActive: true,
+    ...overrides,
+  };
+}
+
 function actionOverrides({ events, saveResult = { ok: true, data: { id: ID } } }) {
   return new Map([
     ["@/lib/auth/current-profile", {
@@ -87,6 +109,10 @@ function actionOverrides({ events, saveResult = { ok: true, data: { id: ID } } }
       },
       async saveComponent(input) {
         events.push(["save-component", input]);
+        return saveResult;
+      },
+      async saveVariant(input) {
+        events.push(["save-variant", input]);
         return saveResult;
       },
       async setCatalogEntityActive(tab, id, isActive) {
@@ -231,6 +257,89 @@ test("family and component saves use their domain parser and repository", async 
     sortOrder: 3,
     isActive: false,
   });
+});
+
+test("variant save authorizes and forwards the complete normalized payload atomically", async () => {
+  const events = [];
+  const actions = loadProjectModule(
+    "app/(app)/admin/catalogo/actions.ts",
+    actionOverrides({ events }),
+  );
+
+  const result = await actions.saveVariantAction(validVariant());
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(events, [
+    ["permission", "catalog:manage"],
+    ["save-variant", {
+      id: null,
+      componentId: COMPONENT_ID,
+      fabtekCode: "FT-001",
+      oracleSapioCode: "ORA-01",
+      description: "Tubo PTFE",
+      diameter: "12 mm",
+      material: "PTFE",
+      connection: "1/2 NPT",
+      unitOfMeasureId: UNIT_ID,
+      categoryIds: [CATEGORY_ID],
+      trackInventory: false,
+      sortOrder: 4,
+      isActive: true,
+    }],
+    ["revalidate", "/admin/catalogo"],
+    ["revalidate", "/catalogo"],
+  ]);
+});
+
+test("variant save rejects empty or duplicate categories before repository access", async () => {
+  for (const categoryIds of [[], [CATEGORY_ID, CATEGORY_ID]]) {
+    const events = [];
+    const actions = loadProjectModule(
+      "app/(app)/admin/catalogo/actions.ts",
+      actionOverrides({ events }),
+    );
+
+    const result = await actions.saveVariantAction(validVariant({ categoryIds }));
+
+    assert.deepEqual(result, {
+      ok: false,
+      error: {
+        code: "CATALOG_INPUT_INVALID",
+        message: "Controlla i dati del catalogo inseriti.",
+      },
+    });
+    assert.deepEqual(events, [["permission", "catalog:manage"]]);
+  }
+});
+
+test("variant repository relation and duplicate errors stay stable without revalidation", async () => {
+  for (const saveResult of [
+    {
+      ok: false,
+      error: {
+        code: "CATALOG_ENTITY_DUPLICATE",
+        message: "Esiste già una voce del catalogo con questi dati.",
+      },
+    },
+    {
+      ok: false,
+      error: {
+        code: "CATALOG_RELATION_INVALID",
+        message: "La relazione selezionata non è disponibile.",
+      },
+    },
+  ]) {
+    const events = [];
+    const actions = loadProjectModule(
+      "app/(app)/admin/catalogo/actions.ts",
+      actionOverrides({ events, saveResult }),
+    );
+
+    const result = await actions.saveVariantAction(validVariant());
+
+    assert.deepEqual(result, saveResult);
+    assert.equal(events.some(([event]) => event === "revalidate"), false);
+  }
 });
 
 test("toggle and delete accept only the catalog entity discriminant, never a raw table", async () => {

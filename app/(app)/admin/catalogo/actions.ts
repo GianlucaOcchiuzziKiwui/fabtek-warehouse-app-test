@@ -6,6 +6,7 @@ import {
   saveCategory,
   saveComponent,
   saveFamily,
+  saveVariant,
   setCatalogEntityActive,
 } from "@/lib/data/admin-catalog";
 import type { ActionResult } from "@/lib/domain/action-result";
@@ -18,6 +19,7 @@ import {
   parseCategoryInput,
   parseComponentInput,
   parseFamilyInput,
+  parseVariantInput,
 } from "@/lib/domain/admin-catalog/validation";
 import { revalidatePath } from "next/cache";
 
@@ -109,6 +111,21 @@ export async function saveComponentAction(
   await requirePermission("catalog:manage");
   try {
     const result = await saveComponent(parseComponentInput(input));
+    revalidateCatalog(result);
+    return result;
+  } catch (error) {
+    const result = validationResult(error);
+    if (result) return result;
+    throw error;
+  }
+}
+
+export async function saveVariantAction(
+  input: unknown,
+): Promise<ActionResult<CatalogMutationResult>> {
+  await requirePermission("catalog:manage");
+  try {
+    const result = await saveVariant(parseVariantInput(input));
     revalidateCatalog(result);
     return result;
   } catch (error) {
