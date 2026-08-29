@@ -57,7 +57,10 @@ function queryValue(value: unknown): string | undefined {
 function requiredText(value: unknown, maxLength?: number): string {
   if (typeof value !== "string") invalid();
   const normalized = value.trim();
-  if (!normalized || (maxLength !== undefined && normalized.length > maxLength)) {
+  if (
+    !normalized
+    || (maxLength !== undefined && Array.from(normalized).length > maxLength)
+  ) {
     invalid();
   }
   return normalized;
@@ -72,7 +75,7 @@ function optionalText(value: unknown): string | null {
 function uuid(value: unknown): string {
   const normalized = requiredText(value);
   if (!UUID_PATTERN.test(normalized)) invalid();
-  return normalized;
+  return normalized.toLowerCase();
 }
 
 function nullableUuid(value: unknown): string | null {
@@ -124,7 +127,7 @@ export function parseAdminCatalogListQuery(value: unknown): AdminCatalogListQuer
     : {};
   const tabValue = queryValue(input.tab);
   const statusValue = queryValue(input.status);
-  const rawQuery = queryValue(input.query);
+  const rawQuery = queryValue(input.q) ?? queryValue(input.query);
   const rawPage = queryValue(input.page);
   const page = rawPage && /^\d+$/.test(rawPage.trim())
     ? Number(rawPage.trim())

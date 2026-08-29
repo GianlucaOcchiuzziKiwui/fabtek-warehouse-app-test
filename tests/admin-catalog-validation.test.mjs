@@ -59,6 +59,15 @@ test("accepts canonical list filters and positive integer pages", () => {
   });
 });
 
+test("reads search text from the canonical q URL parameter", () => {
+  assert.deepEqual(parseAdminCatalogListQuery({ q: "  PTFE  " }), {
+    tab: "categorie",
+    status: "attivi",
+    query: "PTFE",
+    page: 1,
+  });
+});
+
 test("normalizes category fields and empty optional values", () => {
   assert.deepEqual(parseCategoryInput({
     id: null,
@@ -227,6 +236,59 @@ test("enforces database-compatible entity name lengths", () => {
   });
 });
 
+test("counts Unicode code points like PostgreSQL for entity name limits", () => {
+  const categoryName = "😀".repeat(160);
+  const familyName = "🧰".repeat(160);
+  const componentName = "🔧".repeat(200);
+
+  assert.equal(parseCategoryInput({
+    id: null,
+    code: "UNICODE",
+    name: categoryName,
+    subtitle: null,
+    iconKey: "factory",
+    sortOrder: 0,
+    isActive: true,
+  }).name, categoryName);
+  assert.equal(parseFamilyInput({
+    id: null,
+    sourceCode: null,
+    name: familyName,
+    subtitle: null,
+    iconKey: "boxes",
+    sortOrder: 0,
+    isActive: true,
+  }).name, familyName);
+  assert.equal(parseComponentInput({
+    id: null,
+    familyId: FAMILY_ID,
+    name: componentName,
+    description: null,
+    iconKey: "component",
+    sortOrder: 0,
+    isActive: true,
+  }).name, componentName);
+
+  assertInvalid(parseCategoryInput, {
+    id: null,
+    code: "TOO-LONG",
+    name: "😀".repeat(161),
+    subtitle: null,
+    iconKey: "factory",
+    sortOrder: 0,
+    isActive: true,
+  });
+  assertInvalid(parseComponentInput, {
+    id: null,
+    familyId: FAMILY_ID,
+    name: "🔧".repeat(201),
+    description: null,
+    iconKey: "component",
+    sortOrder: 0,
+    isActive: true,
+  });
+});
+
 test("requires nonempty variant text and at least one category", () => {
   const valid = {
     id: null,
@@ -270,6 +332,13 @@ test("rejects duplicate or malformed variant category IDs", () => {
   assertInvalid(parseVariantInput, {
     ...valid,
     categoryIds: [CATEGORY_ID, CATEGORY_ID],
+  });
+  assertInvalid(parseVariantInput, {
+    ...valid,
+    categoryIds: [
+      "abcdefab-cdef-4abc-8def-abcdefabcdef",
+      "ABCDEFAB-CDEF-4ABC-8DEF-ABCDEFABCDEF",
+    ],
   });
   assertInvalid(parseVariantInput, {
     ...valid,
