@@ -1,7 +1,24 @@
 import assert from "node:assert/strict";
+import { registerHooks } from "node:module";
 import test from "node:test";
 
-import {
+let serverOnlyImported = false;
+
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (specifier === "server-only") {
+      serverOnlyImported = true;
+      return {
+        shortCircuit: true,
+        format: "module",
+        url: "data:text/javascript,export%20{}",
+      };
+    }
+    return nextResolve(specifier, context);
+  },
+});
+
+const {
   deleteCatalogEntity,
   getAdminCatalogFormOptions,
   getAdminCatalogPage,
@@ -10,7 +27,7 @@ import {
   saveFamily,
   saveVariant,
   setCatalogEntityActive,
-} from "../lib/data/admin-catalog.ts";
+} = await import("../lib/data/admin-catalog.ts");
 
 const CATEGORY_ID = "10000000-0000-0000-0000-000000000001";
 const FAMILY_ID = "20000000-0000-0000-0000-000000000001";
@@ -132,6 +149,14 @@ function listQuery(overrides = {}) {
     ...overrides,
   };
 }
+
+function optionId(index) {
+  return `60000000-0000-0000-0000-${String(index).padStart(12, "0")}`;
+}
+
+test("admin catalog repository is guarded as a server-only module", () => {
+  assert.equal(serverOnlyImported, true);
+});
 
 test("category listing emits a bounded escaped search and maps its page", async () => {
   const { client, calls } = createSessionClient({
@@ -338,6 +363,36 @@ test("listing repeats the query on the last valid page when the requested page i
   assert.deepEqual(calls.map((call) => call.range), [[1960, 1979], [20, 39]]);
 });
 
+test("listing normalizes an overflow-prone page before constructing its range", async () => {
+  const { client, calls } = createSessionClient({
+    categories: {
+      data: [{
+        id: CATEGORY_ID,
+        code: "CAT-01",
+        name: "Pompe",
+        subtitle: null,
+        icon_key: "factory",
+        sort_order: 0,
+        is_active: true,
+      }],
+      error: null,
+      count: 1,
+    },
+  });
+
+  const result = await getAdminCatalogPage(
+    listQuery({ page: Number.MAX_SAFE_INTEGER }),
+    dependencies(client),
+  );
+
+  assert.equal(result.page, 1);
+  assert.deepEqual(calls.map((call) => call.range), [[0, 19]]);
+  assert.equal(
+    calls.flatMap((call) => call.range ?? []).every(Number.isSafeInteger),
+    true,
+  );
+});
+
 test("form options load no tables for groups, only families for components, and all variant relations", async () => {
   const empty = { data: [], error: null };
   const noOptionsClient = createSessionClient();
@@ -418,6 +473,68 @@ test("form options map inactive parents as visible admin choices", async () => {
       isActive: true,
     }],
   });
+});
+
+test("form options collect every PostgREST page instead of truncating at one thousand rows", async () => {
+  const families = Array.from({ length: 1_001 }, (_, index) => ({
+    id: optionId(index + 1),
+    name: `Famiglia ${index + 1}`,
+    is_active: true,
+  }));
+  const categories = Array.from({ length: 1_001 }, (_, index) => ({
+    id: optionId(index + 2_000),
+    name: `Categoria ${index + 1}`,
+    is_active: true,
+  }));
+  const components = Array.from({ length: 1_001 }, (_, index) => ({
+    id: optionId(index + 4_000),
+    name: `Componente ${index + 1}`,
+    family_id: FAMILY_ID,
+    is_active: true,
+    family: { id: FAMILY_ID, name: "Flessibili", is_active: true },
+  }));
+  const units = Array.from({ length: 1_001 }, (_, index) => ({
+    id: optionId(index + 6_000),
+    code: `U${index + 1}`,
+    name: `Unità ${index + 1}`,
+    is_active: true,
+  }));
+  const pages = (rows) => [
+    { data: rows.slice(0, 1_000), error: null },
+    { data: rows.slice(1_000), error: null },
+  ];
+
+  const familyClient = createSessionClient({ families: pages(families) });
+  const componentOptions = await getAdminCatalogFormOptions(
+    "componenti",
+    dependencies(familyClient.client),
+  );
+  assert.equal(componentOptions.families.length, 1_001);
+  assert.deepEqual(
+    familyClient.calls.map((call) => call.range),
+    [[0, 999], [1_000, 1_999]],
+  );
+
+  const variantClient = createSessionClient({
+    categories: pages(categories),
+    components: pages(components),
+    units_of_measure: pages(units),
+  });
+  const variantOptions = await getAdminCatalogFormOptions(
+    "varianti",
+    dependencies(variantClient.client),
+  );
+  assert.equal(variantOptions.categories.length, 1_001);
+  assert.equal(variantOptions.components.length, 1_001);
+  assert.equal(variantOptions.unitsOfMeasure.length, 1_001);
+  for (const table of ["categories", "components", "units_of_measure"]) {
+    assert.deepEqual(
+      variantClient.calls
+        .filter((call) => call.table === table)
+        .map((call) => call.range),
+      [[0, 999], [1_000, 1_999]],
+    );
+  }
 });
 
 test("single-table saves emit normalized database payloads and return the row id", async () => {

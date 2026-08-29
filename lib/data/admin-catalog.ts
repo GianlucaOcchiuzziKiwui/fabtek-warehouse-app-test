@@ -1,3 +1,5 @@
+import "server-only";
+
 import type { ActionResult } from "../domain/action-result.ts";
 import type {
   AdminCatalogListQuery,
@@ -12,6 +14,10 @@ import {
   CATALOG_ICON_KEYS,
   type CatalogIconKey,
 } from "./catalog-mappers.ts";
+import {
+  collectPaginatedRows,
+  getSafePaginationRange,
+} from "./paginated-query.ts";
 
 const PAGE_SIZE = 20;
 const MAX_QUERY_LENGTH = 120;
@@ -577,7 +583,7 @@ export async function getAdminCatalogPage(
   const normalizedSearch = typeof query.query === "string"
     ? query.query.trim().slice(0, MAX_QUERY_LENGTH)
     : "";
-  let page = normalizePage(query.page);
+  let page = getSafePaginationRange(normalizePage(query.page), PAGE_SIZE).page;
 
   async function loadPage(targetPage: number): Promise<QueryResponse> {
     let catalogQuery = client
@@ -603,8 +609,8 @@ export async function getAdminCatalogPage(
       catalogQuery = catalogQuery.order(column);
     }
 
-    const from = (targetPage - 1) * PAGE_SIZE;
-    return catalogQuery.range(from, from + PAGE_SIZE - 1);
+    const range = getSafePaginationRange(targetPage, PAGE_SIZE);
+    return catalogQuery.range(range.from, range.to);
   }
 
   let response = await loadPage(page);
@@ -636,14 +642,22 @@ export async function getAdminCatalogPage(
 }
 
 async function loadOptions(
-  query: AdminCatalogQuery,
+  loadPage: (from: number, to: number) => PromiseLike<QueryResponse>,
   mapper: (value: unknown) => AdminRelationOption | AdminComponentOption | AdminUnitOption | null,
 ): Promise<(AdminRelationOption | AdminComponentOption | AdminUnitOption)[]> {
-  const response = await query;
-  if (response.error || !Array.isArray(response.data)) {
+  let rows: unknown[];
+  try {
+    rows = await collectPaginatedRows(async (from, to) => {
+      const response = await loadPage(from, to);
+      return {
+        data: Array.isArray(response.data) ? response.data : null,
+        error: response.error,
+      };
+    });
+  } catch {
     throw new AdminCatalogDataError();
   }
-  const options = response.data.map(mapper);
+  const options = rows.map(mapper);
   if (options.some((option) => option === null)) {
     throw new AdminCatalogDataError();
   }
@@ -667,11 +681,12 @@ export async function getAdminCatalogFormOptions(
 
   if (tab === "componenti") {
     result.families = await loadOptions(
-      client
+      (from, to) => client
         .from("families")
         .select("id, name, is_active")
         .order("sort_order")
-        .order("name"),
+        .order("name")
+        .range(from, to),
       relationOption,
     ) as AdminRelationOption[];
     return result;
@@ -679,26 +694,29 @@ export async function getAdminCatalogFormOptions(
 
   const [categories, components, unitsOfMeasure] = await Promise.all([
     loadOptions(
-      client
+      (from, to) => client
         .from("categories")
         .select("id, name, is_active")
         .order("sort_order")
-        .order("name"),
+        .order("name")
+        .range(from, to),
       relationOption,
     ),
     loadOptions(
-      client
+      (from, to) => client
         .from("components")
         .select(COMPONENT_OPTION_SELECT)
         .order("sort_order")
-        .order("name"),
+        .order("name")
+        .range(from, to),
       componentOption,
     ),
     loadOptions(
-      client
+      (from, to) => client
         .from("units_of_measure")
         .select("id, code, name, is_active")
-        .order("name"),
+        .order("name")
+        .range(from, to),
       unitOption,
     ),
   ]);
