@@ -1,6 +1,10 @@
 "use client";
 
 import { CatalogIconSelect } from "@/components/admin/catalog/catalog-icon-select";
+import {
+  CatalogQuickCreate,
+  type QuickCreatedOption,
+} from "@/components/admin/catalog/catalog-quick-create";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -22,7 +26,7 @@ import type {
   AdminRelationOption,
 } from "@/lib/data/admin-catalog";
 import { Loader2 } from "lucide-react";
-import type { FormEvent } from "react";
+import type { FormEvent, ReactNode } from "react";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -39,6 +43,10 @@ type CatalogEntityFormProps = {
   isActive?: boolean;
   onIconChange?: (value: CatalogIconKey) => void;
   onActiveChange?: (value: boolean) => void;
+  onQuickCreateFamily?: () => void;
+  familyId?: string;
+  onFamilyChange?: (value: string) => void;
+  quickCreateFamily?: ReactNode;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onCancel: () => void;
 };
@@ -85,6 +93,10 @@ export function CatalogEntityForm({
   isActive,
   onIconChange,
   onActiveChange,
+  onQuickCreateFamily,
+  familyId,
+  onFamilyChange,
+  quickCreateFamily,
   onSubmit,
   onCancel,
 }: CatalogEntityFormProps) {
@@ -133,11 +145,25 @@ export function CatalogEntityForm({
 
         {entityType === "componenti" ? (
           <div className="space-y-2">
-            <Label htmlFor="catalog-entity-family">Famiglia</Label>
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor="catalog-entity-family">Famiglia</Label>
+              {quickCreateFamily ?? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={pending}
+                  onClick={onQuickCreateFamily}
+                >
+                  Nuova famiglia
+                </Button>
+              )}
+            </div>
             <select
               id="catalog-entity-family"
               name="familyId"
-              defaultValue={entity?.kind === "componente" ? entity.familyId : ""}
+              value={familyId ?? (entity?.kind === "componente" ? entity.familyId : "")}
+              onChange={(event) => onFamilyChange?.(event.target.value)}
               required
               disabled={pending}
               aria-describedby={errorId}
@@ -268,6 +294,7 @@ type CatalogEntityDialogProps = {
   families: AdminRelationOption[];
   blocked?: boolean;
   save: (input: unknown) => Promise<ActionResult<CatalogMutationResult>>;
+  saveFamily?: (input: unknown) => Promise<ActionResult<CatalogMutationResult>>;
 };
 
 export function CatalogEntityDialog({
@@ -278,17 +305,24 @@ export function CatalogEntityDialog({
   families,
   blocked = false,
   save,
+  saveFamily,
 }: CatalogEntityDialogProps) {
   const [iconKey, setIconKey] = useState<CatalogIconKey>(entity?.iconKey ?? "boxes");
   const [isActive, setIsActive] = useState(entity?.isActive ?? true);
   const [error, setError] = useState<string | null>(null);
+  const [familyOptions, setFamilyOptions] = useState(families);
+  const [familyId, setFamilyId] = useState(
+    entity?.kind === "componente" ? entity.familyId : "",
+  );
   const [pending, startTransition] = useTransition();
 
   useEffect(() => {
     setIconKey(entity?.iconKey ?? "boxes");
     setIsActive(entity?.isActive ?? true);
     setError(null);
-  }, [entity, open]);
+    setFamilyOptions(families);
+    setFamilyId(entity?.kind === "componente" ? entity.familyId : "");
+  }, [entity, families, open]);
 
   function close() {
     if (!pending && !blocked) onOpenChange(false);
@@ -323,7 +357,7 @@ export function CatalogEntityDialog({
               }
             : {
                 ...base,
-                familyId: formData.get("familyId"),
+                familyId,
                 description: formData.get("description"),
               };
         const result = await save(input);
@@ -349,13 +383,27 @@ export function CatalogEntityDialog({
         <CatalogEntityForm
           entityType={entityType}
           entity={entity}
-          families={families}
+          families={familyOptions}
           pending={pending || blocked}
           error={error}
           iconKey={iconKey}
           isActive={isActive}
           onIconChange={setIconKey}
           onActiveChange={setIsActive}
+          familyId={familyId}
+          onFamilyChange={setFamilyId}
+          quickCreateFamily={entityType === "componenti" && saveFamily ? (
+            <CatalogQuickCreate
+              kind="family"
+              create={saveFamily}
+              disabled={pending || blocked}
+              onCreated={(option: QuickCreatedOption) => {
+                const family = option as AdminRelationOption;
+                setFamilyOptions((current) => [...current, family]);
+                setFamilyId(family.id);
+              }}
+            />
+          ) : undefined}
           onSubmit={submit}
           onCancel={close}
         />

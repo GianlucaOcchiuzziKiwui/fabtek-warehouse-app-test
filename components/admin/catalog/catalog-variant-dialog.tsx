@@ -1,5 +1,9 @@
 "use client";
 
+import {
+  CatalogQuickCreate,
+  type QuickCreatedOption,
+} from "@/components/admin/catalog/catalog-quick-create";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,10 +19,13 @@ import type { ActionResult } from "@/lib/domain/action-result";
 import type { CatalogMutationResult } from "@/lib/domain/admin-catalog/contracts";
 import type {
   AdminCatalogFormOptions,
+  AdminCategoryOption,
+  AdminComponentOption,
+  AdminUnitOption,
   AdminVariantRow,
 } from "@/lib/data/admin-catalog";
 import { Loader2 } from "lucide-react";
-import type { FormEvent } from "react";
+import type { FormEvent, ReactNode } from "react";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -33,6 +40,16 @@ type CatalogVariantFormProps = {
   onCategoryChange: (categoryId: string, selected: boolean) => void;
   onActiveChange: (value: boolean) => void;
   onInventoryChange: (value: boolean) => void;
+  onQuickCreateComponent?: () => void;
+  onQuickCreateCategory?: () => void;
+  onQuickCreateUnit?: () => void;
+  componentId?: string;
+  unitOfMeasureId?: string;
+  onComponentChange?: (value: string) => void;
+  onUnitChange?: (value: string) => void;
+  quickCreateComponent?: ReactNode;
+  quickCreateCategory?: ReactNode;
+  quickCreateUnit?: ReactNode;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onCancel: () => void;
 };
@@ -58,6 +75,16 @@ export function CatalogVariantForm({
   onCategoryChange,
   onActiveChange,
   onInventoryChange,
+  onQuickCreateComponent,
+  onQuickCreateCategory,
+  onQuickCreateUnit,
+  componentId,
+  unitOfMeasureId,
+  onComponentChange,
+  onUnitChange,
+  quickCreateComponent,
+  quickCreateCategory,
+  quickCreateUnit,
   onSubmit,
   onCancel,
 }: CatalogVariantFormProps) {
@@ -80,11 +107,19 @@ export function CatalogVariantForm({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-2 sm:col-span-2">
-          <Label htmlFor="catalog-variant-component">Componente</Label>
+          <div className="flex items-center justify-between gap-3">
+            <Label htmlFor="catalog-variant-component">Componente</Label>
+            {quickCreateComponent ?? (
+              <Button type="button" variant="ghost" size="sm" disabled={pending} onClick={onQuickCreateComponent}>
+                Nuovo componente
+              </Button>
+            )}
+          </div>
           <select
             id="catalog-variant-component"
             name="componentId"
-            defaultValue={entity?.componentId ?? ""}
+            value={componentId ?? entity?.componentId ?? ""}
+            onChange={(event) => onComponentChange?.(event.target.value)}
             required
             disabled={pending}
             aria-describedby={errorId}
@@ -172,11 +207,19 @@ export function CatalogVariantForm({
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="catalog-variant-unit">Unità di misura</Label>
+          <div className="flex items-center justify-between gap-3">
+            <Label htmlFor="catalog-variant-unit">Unità di misura</Label>
+            {quickCreateUnit ?? (
+              <Button type="button" variant="ghost" size="sm" disabled={pending} onClick={onQuickCreateUnit}>
+                Nuova unità
+              </Button>
+            )}
+          </div>
           <select
             id="catalog-variant-unit"
             name="unitOfMeasureId"
-            defaultValue={entity?.unitOfMeasureId ?? ""}
+            value={unitOfMeasureId ?? entity?.unitOfMeasureId ?? ""}
+            onChange={(event) => onUnitChange?.(event.target.value)}
             required
             disabled={pending}
             aria-describedby={errorId}
@@ -197,6 +240,11 @@ export function CatalogVariantForm({
         className="min-w-0 space-y-3 rounded-xl border border-input p-3"
       >
         <legend className="px-1 text-sm font-medium text-foreground">Categorie</legend>
+        {quickCreateCategory ?? (
+          <Button type="button" variant="ghost" size="sm" disabled={pending} onClick={onQuickCreateCategory}>
+            Nuova categoria
+          </Button>
+        )}
         <p
           id="catalog-variant-categories-help"
           className="min-w-0 break-words text-xs text-muted-foreground [overflow-wrap:anywhere]"
@@ -317,6 +365,10 @@ type CatalogVariantDialogProps = {
   options: AdminCatalogFormOptions;
   blocked?: boolean;
   save: (input: unknown) => Promise<ActionResult<CatalogMutationResult>>;
+  saveCategory?: (input: unknown) => Promise<ActionResult<CatalogMutationResult>>;
+  saveFamily?: (input: unknown) => Promise<ActionResult<CatalogMutationResult>>;
+  saveComponent?: (input: unknown) => Promise<ActionResult<CatalogMutationResult>>;
+  saveUnit?: (input: unknown) => Promise<ActionResult<CatalogMutationResult>>;
 };
 
 export function CatalogVariantDialog({
@@ -326,12 +378,19 @@ export function CatalogVariantDialog({
   options,
   blocked = false,
   save,
+  saveCategory,
+  saveFamily,
+  saveComponent,
+  saveUnit,
 }: CatalogVariantDialogProps) {
   const [categoryIds, setCategoryIds] = useState(() => (
     entity?.categories.map((category) => category.id) ?? []
   ));
   const [isActive, setIsActive] = useState(entity?.isActive ?? true);
   const [trackInventory, setTrackInventory] = useState(entity?.trackInventory ?? false);
+  const [formOptions, setFormOptions] = useState(options);
+  const [componentId, setComponentId] = useState(entity?.componentId ?? "");
+  const [unitOfMeasureId, setUnitOfMeasureId] = useState(entity?.unitOfMeasureId ?? "");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -339,8 +398,11 @@ export function CatalogVariantDialog({
     setCategoryIds(entity?.categories.map((category) => category.id) ?? []);
     setIsActive(entity?.isActive ?? true);
     setTrackInventory(entity?.trackInventory ?? false);
+    setFormOptions(options);
+    setComponentId(entity?.componentId ?? "");
+    setUnitOfMeasureId(entity?.unitOfMeasureId ?? "");
     setError(null);
-  }, [entity, open]);
+  }, [entity, open, options]);
 
   function close() {
     if (!pending && !blocked) onOpenChange(false);
@@ -362,14 +424,14 @@ export function CatalogVariantDialog({
       try {
         const result = await save({
           id: entity?.id ?? null,
-          componentId: formData.get("componentId"),
+          componentId,
           fabtekCode: formData.get("fabtekCode"),
           oracleSapioCode: formData.get("oracleSapioCode"),
           description: formData.get("description"),
           diameter: formData.get("diameter"),
           material: formData.get("material"),
           connection: formData.get("connection"),
-          unitOfMeasureId: formData.get("unitOfMeasureId"),
+          unitOfMeasureId,
           categoryIds,
           trackInventory,
           sortOrder: formData.get("sortOrder"),
@@ -396,7 +458,7 @@ export function CatalogVariantDialog({
       <DialogContent className="max-w-3xl">
         <CatalogVariantForm
           entity={entity}
-          options={options}
+          options={formOptions}
           categoryIds={categoryIds}
           isActive={isActive}
           trackInventory={trackInventory}
@@ -405,6 +467,57 @@ export function CatalogVariantDialog({
           onCategoryChange={changeCategory}
           onActiveChange={setIsActive}
           onInventoryChange={setTrackInventory}
+          componentId={componentId}
+          unitOfMeasureId={unitOfMeasureId}
+          onComponentChange={setComponentId}
+          onUnitChange={setUnitOfMeasureId}
+          quickCreateComponent={saveComponent ? (
+            <CatalogQuickCreate
+              kind="component"
+              families={formOptions.families}
+              create={saveComponent}
+              createFamily={saveFamily}
+              disabled={pending || blocked}
+              onCreated={(option: QuickCreatedOption) => {
+                const component = option as AdminComponentOption;
+                setFormOptions((current) => ({
+                  ...current,
+                  components: [...current.components, component],
+                }));
+                setComponentId(component.id);
+              }}
+            />
+          ) : undefined}
+          quickCreateUnit={saveUnit ? (
+            <CatalogQuickCreate
+              kind="unit"
+              create={saveUnit}
+              disabled={pending || blocked}
+              onCreated={(option: QuickCreatedOption) => {
+                const unit = option as AdminUnitOption;
+                setFormOptions((current) => ({
+                  ...current,
+                  unitsOfMeasure: [...current.unitsOfMeasure, unit],
+                }));
+                setUnitOfMeasureId(unit.id);
+              }}
+            />
+          ) : undefined}
+          quickCreateCategory={saveCategory ? (
+            <CatalogQuickCreate
+              kind="category"
+              create={saveCategory}
+              disabled={pending || blocked}
+              onCreated={(option: QuickCreatedOption) => {
+                const category = option as AdminCategoryOption;
+                setFormOptions((current) => ({
+                  ...current,
+                  categories: [...current.categories, category],
+                }));
+                setCategoryIds((current) => [...current, category.id]);
+              }}
+            />
+          ) : undefined}
           onSubmit={submit}
           onCancel={close}
         />

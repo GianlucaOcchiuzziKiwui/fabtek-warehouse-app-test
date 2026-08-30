@@ -329,6 +329,26 @@ test("component form requires a family and keeps inactive families visible", () 
   assert.match(markup, /<label[^>]*for="catalog-entity-description"[^>]*>Descrizione/u);
 });
 
+test("component form offers a discreet inline family creator without nesting forms", () => {
+  const { CatalogEntityForm } = loadProjectModule(
+    "components/admin/catalog/catalog-entity-dialog.tsx",
+    DIALOG_OVERRIDES,
+  );
+  const markup = renderToStaticMarkup(React.createElement(CatalogEntityForm, {
+    entityType: "componenti",
+    entity: null,
+    families: [],
+    pending: false,
+    error: null,
+    onSubmit() {},
+    onCancel() {},
+    onQuickCreateFamily() {},
+  }));
+
+  assert.match(markup, />Nuova famiglia</u);
+  assert.equal((markup.match(/<form\b/gu) ?? []).length, 1);
+});
+
 test("entity form announces errors, disables submission while pending and keeps cancel focusable", () => {
   const { CatalogEntityForm } = loadProjectModule(
     "components/admin/catalog/catalog-entity-dialog.tsx",
@@ -430,6 +450,208 @@ test("variant form exposes every editable field and visibly selected categories"
   assert.match(markup, /<label[^>]*for="catalog-variant-track-inventory"/u);
   assert.match(markup, /<label[^>]*for="catalog-variant-sort-order"[^>]*>Ordine/u);
   assert.match(markup, /<label[^>]*for="catalog-variant-active"/u);
+});
+
+test("variant form offers only the three inline quick-create entry points", () => {
+  const { CatalogVariantForm } = loadProjectModule(
+    "components/admin/catalog/catalog-variant-dialog.tsx",
+    DIALOG_OVERRIDES,
+  );
+  const markup = renderToStaticMarkup(React.createElement(CatalogVariantForm, {
+    entity: null,
+    options: { categories: [], families: [], components: [], unitsOfMeasure: [] },
+    categoryIds: [],
+    isActive: true,
+    trackInventory: false,
+    pending: false,
+    error: null,
+    onCategoryChange() {},
+    onActiveChange() {},
+    onInventoryChange() {},
+    onSubmit() {},
+    onCancel() {},
+    onQuickCreateComponent() {},
+    onQuickCreateCategory() {},
+    onQuickCreateUnit() {},
+  }));
+
+  assert.equal((markup.match(/<form\b/gu) ?? []).length, 1);
+  assert.equal((markup.match(/>Nuovo componente</gu) ?? []).length, 1);
+  assert.equal((markup.match(/>Nuova categoria</gu) ?? []).length, 1);
+  assert.equal((markup.match(/>Nuova unità</gu) ?? []).length, 1);
+});
+
+test("new technical icons render through the shared picker registry", () => {
+  const { CatalogIcon } = loadProjectModule("components/catalog/catalog-icon.tsx");
+
+  for (const iconKey of ["bolt", "circuit-board", "cog", "fan", "filter", "pipette", "shield-check", "thermometer"]) {
+    assert.equal(CATALOG_ICON_KEYS.includes(iconKey), true);
+    const markup = renderToStaticMarkup(React.createElement(CatalogIcon, { iconKey }));
+    assert.match(markup, new RegExp(`data-catalog-icon="${iconKey}"`, "u"));
+  }
+});
+
+test("quick unit creator sends only essential normalized fields and returns the selectable option", async () => {
+  let CatalogQuickCreate;
+  assert.doesNotThrow(() => {
+    ({ CatalogQuickCreate } = loadProjectModule(
+      "components/admin/catalog/catalog-quick-create.tsx",
+      new Map([["sonner", { toast: { success() {} } }]]),
+    ));
+  });
+  const harness = createHookHarness();
+  const events = [];
+  const overrides = new Map([
+    ["react", harness.react],
+    ["sonner", { toast: { success() {} } }],
+  ]);
+  ({ CatalogQuickCreate } = loadProjectModule(
+    "components/admin/catalog/catalog-quick-create.tsx",
+    overrides,
+  ));
+  const props = {
+    kind: "unit",
+    families: [],
+    async create(input) {
+      events.push(["create", input]);
+      return { ok: true, data: { id: UNIT_ID } };
+    },
+    onCreated(option) { events.push(["created", option]); },
+  };
+
+  let rendered = harness.render(CatalogQuickCreate, props);
+  const trigger = findElement(rendered.tree, (element) => (
+    React.Children.toArray(element.props.children).includes("Nuova unità")
+  ));
+  trigger.props.onClick();
+  rendered = harness.render(CatalogQuickCreate, props);
+  findElement(rendered.tree, (element) => element.props.id === "quick-create-unit-code")
+    .props.onChange({ target: { value: " kg " } });
+  findElement(rendered.tree, (element) => element.props.id === "quick-create-unit-name")
+    .props.onChange({ target: { value: " Chilogrammi " } });
+  findElement(rendered.tree, (element) => element.props.id === "quick-create-unit-fraction")
+    .props.onChange({ target: { checked: true } });
+  rendered = harness.render(CatalogQuickCreate, props);
+  const save = findElement(rendered.tree, (element) => element.props.children === "Aggiungi");
+  save.props.onClick();
+  await Promise.all(harness.transitions);
+
+  assert.deepEqual(events, [
+    ["create", { code: "kg", name: "Chilogrammi", allowsFraction: true }],
+    ["created", { id: UNIT_ID, code: "kg", name: "Chilogrammi", isActive: true }],
+  ]);
+});
+
+test("variant dialog appends and selects every relation created inline", () => {
+  const harness = createHookHarness();
+  function QuickCreate() { return null; }
+  const overrides = new Map([
+    ["react", harness.react],
+    ["@/components/admin/catalog/catalog-quick-create", { CatalogQuickCreate: QuickCreate }],
+    ["@/components/ui/dialog", {
+      Dialog: ({ children }) => children,
+      DialogContent: ({ children }) => children,
+      DialogHeader: ({ children }) => children,
+      DialogTitle: ({ children }) => children,
+      DialogDescription: ({ children }) => children,
+      DialogFooter: ({ children }) => children,
+    }],
+    ["sonner", { toast: { success() {} } }],
+  ]);
+  const { CatalogVariantDialog, CatalogVariantForm } = loadProjectModule(
+    "components/admin/catalog/catalog-variant-dialog.tsx",
+    overrides,
+  );
+  const family = { id: FAMILY_ID, name: "Tubazioni", isActive: true };
+  const props = {
+    open: true,
+    onOpenChange() {},
+    entity: null,
+    options: { categories: [], families: [family], components: [], unitsOfMeasure: [] },
+    async save() { return { ok: true, data: { id: COMPONENT_ID } }; },
+    async saveCategory() { return { ok: true, data: { id: CATEGORY_ID } }; },
+    async saveFamily() { return { ok: true, data: { id: FAMILY_ID } }; },
+    async saveComponent() { return { ok: true, data: { id: COMPONENT_ID } }; },
+    async saveUnit() { return { ok: true, data: { id: UNIT_ID } }; },
+  };
+
+  let rendered = harness.render(CatalogVariantDialog, props);
+  let form = findElement(rendered.tree, (element) => element.type === CatalogVariantForm);
+  let creators = [
+    form.props.quickCreateComponent,
+    form.props.quickCreateUnit,
+    form.props.quickCreateCategory,
+  ];
+  assert.deepEqual(creators.map((creator) => creator.props.kind), ["component", "unit", "category"]);
+  creators.find((creator) => creator.props.kind === "component").props.onCreated({
+    id: COMPONENT_ID,
+    name: "Tubo",
+    isActive: true,
+    familyId: FAMILY_ID,
+    family,
+  });
+  creators.find((creator) => creator.props.kind === "unit").props.onCreated({
+    id: UNIT_ID,
+    code: "kg",
+    name: "Chilogrammi",
+    isActive: true,
+  });
+  creators.find((creator) => creator.props.kind === "category").props.onCreated({
+    id: CATEGORY_ID,
+    code: "GAS",
+    name: "Gas",
+    isActive: true,
+  });
+
+  rendered = harness.render(CatalogVariantDialog, props);
+  form = findElement(rendered.tree, (element) => element.type === CatalogVariantForm);
+  assert.equal(form.props.componentId, COMPONENT_ID);
+  assert.equal(form.props.unitOfMeasureId, UNIT_ID);
+  assert.deepEqual(form.props.categoryIds, [CATEGORY_ID]);
+  assert.equal(form.props.options.components[0].name, "Tubo");
+  assert.equal(form.props.options.unitsOfMeasure[0].code, "kg");
+  assert.equal(form.props.options.categories[0].code, "GAS");
+});
+
+test("component dialog appends and selects a family created inline", () => {
+  const harness = createHookHarness();
+  function QuickCreate() { return null; }
+  const overrides = new Map([
+    ["react", harness.react],
+    ["@/components/admin/catalog/catalog-quick-create", { CatalogQuickCreate: QuickCreate }],
+    ["@/components/ui/dialog", {
+      Dialog: ({ children }) => children,
+      DialogContent: ({ children }) => children,
+      DialogHeader: ({ children }) => children,
+      DialogTitle: ({ children }) => children,
+      DialogDescription: ({ children }) => children,
+      DialogFooter: ({ children }) => children,
+    }],
+    ["sonner", { toast: { success() {} } }],
+  ]);
+  const { CatalogEntityDialog, CatalogEntityForm } = loadProjectModule(
+    "components/admin/catalog/catalog-entity-dialog.tsx",
+    overrides,
+  );
+  const props = {
+    open: true,
+    onOpenChange() {},
+    entityType: "componenti",
+    entity: null,
+    families: [],
+    async save() { return { ok: true, data: { id: COMPONENT_ID } }; },
+    async saveFamily() { return { ok: true, data: { id: FAMILY_ID } }; },
+  };
+
+  let rendered = harness.render(CatalogEntityDialog, props);
+  let form = findElement(rendered.tree, (element) => element.type === CatalogEntityForm);
+  const creator = form.props.quickCreateFamily;
+  assert.equal(creator.props.kind, "family");
+  creator.props.onCreated({ id: FAMILY_ID, name: "Tubazioni", isActive: true });
+  rendered = harness.render(CatalogEntityDialog, props);
+  form = findElement(rendered.tree, (element) => element.type === CatalogEntityForm);
+  assert.equal(form.props.familyId, FAMILY_ID);
+  assert.equal(form.props.families[0].name, "Tubazioni");
 });
 
 test("variant toggles make the complete 40px row their checkbox label", () => {

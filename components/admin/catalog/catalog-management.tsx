@@ -5,6 +5,7 @@ import {
   saveCategoryAction,
   saveComponentAction,
   saveFamilyAction,
+  saveUnitAction,
   saveVariantAction,
   setCatalogEntityActiveAction,
 } from "@/app/(app)/admin/catalogo/actions";
@@ -616,6 +617,22 @@ export function CatalogManagement({
             editor.entity?.id ?? "new-varianti",
             () => saveVariantAction(input),
           )}
+          saveCategory={(input) => runLockedMutation(
+            "quick-category",
+            () => saveCategoryAction(input),
+          )}
+          saveFamily={(input) => runLockedMutation(
+            "quick-family",
+            () => saveFamilyAction(input),
+          )}
+          saveComponent={(input) => runLockedMutation(
+            "quick-component",
+            () => saveComponentAction(input),
+          )}
+          saveUnit={(input) => runLockedMutation(
+            "quick-unit",
+            () => saveUnitAction(input),
+          )}
         />
       ) : editor ? (
         <CatalogEntityDialog
@@ -629,6 +646,10 @@ export function CatalogManagement({
           save={(input) => runLockedMutation(
             editor.entity?.id ?? `new-${editor.entityType}`,
             () => saveActionFor(editor.entityType)(input),
+          )}
+          saveFamily={(input) => runLockedMutation(
+            "quick-family",
+            () => saveFamilyAction(input),
           )}
         />
       ) : null}

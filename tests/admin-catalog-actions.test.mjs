@@ -111,6 +111,10 @@ function actionOverrides({ events, saveResult = { ok: true, data: { id: ID } } }
         events.push(["save-component", input]);
         return saveResult;
       },
+      async saveUnit(input) {
+        events.push(["save-unit", input]);
+        return saveResult;
+      },
       async saveVariant(input) {
         events.push(["save-variant", input]);
         return saveResult;
@@ -257,6 +261,33 @@ test("family and component saves use their domain parser and repository", async 
     sortOrder: 3,
     isActive: false,
   });
+});
+
+test("quick unit save authorizes, validates and revalidates catalog reads", async () => {
+  const events = [];
+  const actions = loadProjectModule(
+    "app/(app)/admin/catalogo/actions.ts",
+    actionOverrides({ events }),
+  );
+
+  assert.equal(typeof actions.saveUnitAction, "function");
+  const result = await actions.saveUnitAction({
+    code: " kg ",
+    name: " Chilogrammi ",
+    allowsFraction: true,
+  });
+
+  assert.deepEqual(result, { ok: true, data: { id: ID } });
+  assert.deepEqual(events, [
+    ["permission", "catalog:manage"],
+    ["save-unit", {
+      code: "kg",
+      name: "Chilogrammi",
+      allowsFraction: true,
+    }],
+    ["revalidate", "/admin/catalogo"],
+    ["revalidate", "/catalogo"],
+  ]);
 });
 
 test("variant save authorizes and forwards the complete normalized payload atomically", async () => {

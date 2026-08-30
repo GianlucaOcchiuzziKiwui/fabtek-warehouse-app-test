@@ -1,14 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
+import * as adminCatalogValidation from "../lib/domain/admin-catalog/validation.ts";
+
+const {
   AdminCatalogValidationError,
   parseAdminCatalogListQuery,
   parseCategoryInput,
   parseComponentInput,
   parseFamilyInput,
   parseVariantInput,
-} from "../lib/domain/admin-catalog/validation.ts";
+} = adminCatalogValidation;
 
 const CATEGORY_ID = "30000000-0000-4000-8000-000000000001";
 const SECOND_CATEGORY_ID = "30000000-0000-4000-8000-000000000002";
@@ -124,6 +126,28 @@ test("normalizes family and component fields", () => {
     sortOrder: 0,
     isActive: true,
   });
+});
+
+test("normalizes the quick-create unit fields without inventing fractional support", () => {
+  assert.deepEqual(adminCatalogValidation.parseUnitInput?.({
+    code: " kg ",
+    name: " Chilogrammi ",
+    allowsFraction: false,
+  }), {
+    code: "kg",
+    name: "Chilogrammi",
+    allowsFraction: false,
+  });
+});
+
+test("rejects malformed quick-create units", () => {
+  for (const input of [
+    { code: " ", name: "Pezzi", allowsFraction: false },
+    { code: "PZ", name: " ", allowsFraction: false },
+    { code: "PZ", name: "Pezzi", allowsFraction: "false" },
+  ]) {
+    assertInvalid(adminCatalogValidation.parseUnitInput, input);
+  }
 });
 
 test("normalizes every variant field without inventing optional data", () => {

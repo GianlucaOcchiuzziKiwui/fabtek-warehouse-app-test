@@ -1,6 +1,6 @@
 begin;
 
-select plan(13);
+select plan(16);
 
 select has_column('public', 'categories', 'icon_key', 'categories expose an icon key');
 select has_column('public', 'families', 'icon_key', 'families expose an icon key');
@@ -69,6 +69,19 @@ select throws_ok(
   '23514',
   null,
   'components reject an unsupported icon key'
+);
+
+select lives_ok(
+  $$ update public.categories set icon_key = 'filter' where id = (select id from public.categories limit 1) $$,
+  'categories accept expanded technical icon keys'
+);
+select lives_ok(
+  $$ update public.families set icon_key = 'cog' where id = (select id from public.families limit 1) $$,
+  'families accept expanded technical icon keys'
+);
+select lives_ok(
+  $$ update public.components set icon_key = 'circuit-board' where id = (select id from public.components limit 1) $$,
+  'components accept expanded technical icon keys'
 );
 
 select * from finish();

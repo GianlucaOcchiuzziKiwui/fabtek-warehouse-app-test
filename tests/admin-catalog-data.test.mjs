@@ -25,6 +25,7 @@ const {
   saveCategory,
   saveComponent,
   saveFamily,
+  saveUnit,
   saveVariant,
   setCatalogEntityActive,
 } = await import("../lib/data/admin-catalog.ts");
@@ -543,7 +544,7 @@ test("listing normalizes an overflow-prone page before constructing its range", 
   );
 });
 
-test("form options load no tables for groups, only families for components, and all variant relations", async () => {
+test("form options load no tables for groups and every relation needed by inline creation", async () => {
   const empty = { data: [], error: null };
   const noOptionsClient = createSessionClient();
   assert.deepEqual(
@@ -566,6 +567,7 @@ test("form options load no tables for groups, only families for components, and 
 
   const variantClient = createSessionClient({
     categories: empty,
+    families: empty,
     components: empty,
     units_of_measure: empty,
   });
@@ -575,11 +577,7 @@ test("form options load no tables for groups, only families for components, and 
   );
   assert.deepEqual(
     variantClient.calls.map((call) => call.table).sort(),
-    ["categories", "components", "units_of_measure"],
-  );
-  assert.equal(
-    variantClient.calls.some((call) => call.table === "families"),
-    false,
+    ["categories", "components", "families", "units_of_measure"],
   );
   assert.deepEqual(
     Object.fromEntries(variantClient.calls.map((call) => [
@@ -588,6 +586,7 @@ test("form options load no tables for groups, only families for components, and 
     ])),
     {
       categories: ["sort_order", "name", "id"],
+      families: ["sort_order", "name", "id"],
       components: ["sort_order", "name", "id"],
       units_of_measure: ["name", "id"],
     },
@@ -610,6 +609,10 @@ test("form options map inactive parents as visible admin choices", async () => {
       }],
       error: null,
     },
+    families: {
+      data: [{ id: FAMILY_ID, name: "Flessibili", is_active: false }],
+      error: null,
+    },
     units_of_measure: {
       data: [{ id: UNIT_ID, code: "m", name: "Metri", is_active: true }],
       error: null,
@@ -623,7 +626,7 @@ test("form options map inactive parents as visible admin choices", async () => {
 
   assert.deepEqual(result, {
     categories: [{ id: CATEGORY_ID, code: "CAT-GAS", name: "Gas", isActive: false }],
-    families: [],
+    families: [{ id: FAMILY_ID, name: "Flessibili", isActive: false }],
     components: [{
       id: COMPONENT_ID,
       name: "Tubi",
@@ -683,6 +686,7 @@ test("form options collect every PostgREST page instead of truncating at one tho
 
   const variantClient = createSessionClient({
     categories: pages(categories),
+    families: pages(families),
     components: pages(components),
     units_of_measure: pages(units),
   });
@@ -691,9 +695,10 @@ test("form options collect every PostgREST page instead of truncating at one tho
     dependencies(variantClient.client),
   );
   assert.equal(variantOptions.categories.length, 1_001);
+  assert.equal(variantOptions.families.length, 1_001);
   assert.equal(variantOptions.components.length, 1_001);
   assert.equal(variantOptions.unitsOfMeasure.length, 1_001);
-  for (const table of ["categories", "components", "units_of_measure"]) {
+  for (const table of ["categories", "families", "components", "units_of_measure"]) {
     assert.deepEqual(
       variantClient.calls
         .filter((call) => call.table === table)
@@ -794,6 +799,36 @@ test("single-table saves emit normalized database payloads and return the row id
     icon_key: "component",
     sort_order: 4,
     is_active: true,
+  });
+});
+
+test("quick unit creation persists its quantity semantics and returns the new id", async () => {
+  assert.equal(typeof saveUnit, "function");
+  const { client, calls } = createSessionClient({
+    units_of_measure: { data: { id: UNIT_ID }, error: null },
+  });
+
+  const result = await saveUnit({
+    code: "kg",
+    name: "Chilogrammi",
+    allowsFraction: true,
+  }, dependencies(client));
+
+  assert.deepEqual(result, { ok: true, data: { id: UNIT_ID } });
+  assert.deepEqual(calls[0], {
+    table: "units_of_measure",
+    operation: "insert",
+    select: "id",
+    selectOptions: null,
+    payload: {
+      code: "kg",
+      name: "Chilogrammi",
+      allows_fraction: true,
+      is_active: true,
+    },
+    filters: [],
+    orders: [],
+    range: null,
   });
 });
 

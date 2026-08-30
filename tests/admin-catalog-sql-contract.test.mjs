@@ -4,6 +4,8 @@ import test from "node:test";
 
 const migrationPath =
   "supabase/migrations/20260829100000_add_admin_catalog_variant_rpc.sql";
+const iconMigrationPath =
+  "supabase/migrations/20260830120000_expand_catalog_icon_keys.sql";
 
 async function readMigration() {
   try {
@@ -100,4 +102,35 @@ test("variant RPC execution is explicitly limited to authenticated sessions", as
     source,
     /grant\s+execute\s+on\s+function\s+public\.save_catalog_variant\s*\([\s\S]*?\)\s+to\s+authenticated\s*;/iu,
   );
+});
+
+test("expanded technical icons replace every persisted icon whitelist atomically", async () => {
+  let source = "";
+  try {
+    source = await readFile(iconMigrationPath, "utf8");
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+
+  for (const constraint of [
+    "categories_icon_key_check",
+    "families_icon_key_check",
+    "components_icon_key_check",
+  ]) {
+    assert.match(source, new RegExp(`drop\\s+constraint\\s+${constraint}`, "iu"));
+    assert.match(source, new RegExp(`add\\s+constraint\\s+${constraint}`, "iu"));
+  }
+  for (const iconKey of [
+    "bolt",
+    "circuit-board",
+    "cog",
+    "fan",
+    "filter",
+    "pipette",
+    "shield-check",
+    "thermometer",
+  ]) {
+    assert.match(source, new RegExp(`'${iconKey}'`, "u"));
+  }
+  assert.match(source, /^begin;[\s\S]*commit;\s*$/iu);
 });

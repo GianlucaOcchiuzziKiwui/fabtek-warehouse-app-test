@@ -43,6 +43,12 @@ export type ComponentInput = CatalogEntityInput & CatalogIconInput & {
   description: string | null;
 };
 
+export type UnitInput = {
+  code: string;
+  name: string;
+  allowsFraction: boolean;
+};
+
 export type VariantInput = CatalogEntityInput & {
   componentId: string;
   fabtekCode: string;

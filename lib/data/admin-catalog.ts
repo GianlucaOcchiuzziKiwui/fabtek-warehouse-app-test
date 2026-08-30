@@ -8,6 +8,7 @@ import type {
   CategoryInput,
   ComponentInput,
   FamilyInput,
+  UnitInput,
   VariantInput,
 } from "../domain/admin-catalog/contracts.ts";
 import {
@@ -730,7 +731,7 @@ export async function getAdminCatalogFormOptions(
     return result;
   }
 
-  const [categories, components, unitsOfMeasure] = await Promise.all([
+  const [categories, families, components, unitsOfMeasure] = await Promise.all([
     loadOptions(
       (from, to) => client
         .from("categories")
@@ -740,6 +741,16 @@ export async function getAdminCatalogFormOptions(
         .order("id")
         .range(from, to),
       categoryOption,
+    ),
+    loadOptions(
+      (from, to) => client
+        .from("families")
+        .select("id, name, is_active")
+        .order("sort_order")
+        .order("name")
+        .order("id")
+        .range(from, to),
+      relationOption,
     ),
     loadOptions(
       (from, to) => client
@@ -764,14 +775,14 @@ export async function getAdminCatalogFormOptions(
 
   return {
     categories: categories as AdminCategoryOption[],
-    families: [],
+    families: families as AdminRelationOption[],
     components: components as AdminComponentOption[],
     unitsOfMeasure: unitsOfMeasure as AdminUnitOption[],
   };
 }
 
 async function saveSingleRow(
-  table: "categories" | "families" | "components",
+  table: "categories" | "families" | "components" | "units_of_measure",
   id: string | null,
   payload: Record<string, unknown>,
   dependencies: Partial<AdminCatalogDependencies>,
@@ -833,6 +844,18 @@ export function saveComponent(
     icon_key: input.iconKey,
     sort_order: input.sortOrder,
     is_active: input.isActive,
+  }, dependencies);
+}
+
+export function saveUnit(
+  input: UnitInput,
+  dependencies: Partial<AdminCatalogDependencies> = {},
+): Promise<ActionResult<CatalogMutationResult>> {
+  return saveSingleRow("units_of_measure", null, {
+    code: input.code,
+    name: input.name,
+    allows_fraction: input.allowsFraction,
+    is_active: true,
   }, dependencies);
 }
 

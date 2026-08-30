@@ -9,6 +9,7 @@ import type {
   CategoryInput,
   ComponentInput,
   FamilyInput,
+  UnitInput,
   VariantInput,
 } from "./contracts.ts";
 
@@ -176,6 +177,15 @@ export function parseComponentInput(value: unknown): ComponentInput {
     name: requiredText(input.name, 200),
     description: optionalText(input.description),
     iconKey: iconKey(input.iconKey),
+  };
+}
+
+export function parseUnitInput(value: unknown): UnitInput {
+  const input = record(value);
+  return {
+    code: requiredText(input.code, 40),
+    name: requiredText(input.name, 120),
+    allowsFraction: boolean(input.allowsFraction),
   };
 }
 
