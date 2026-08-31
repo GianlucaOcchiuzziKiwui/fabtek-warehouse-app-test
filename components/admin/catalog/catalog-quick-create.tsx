@@ -38,9 +38,11 @@ const COPY = {
   unit: { trigger: "Nuova unità", title: "Aggiungi unità", success: "Unità aggiunta." },
 } as const;
 
+const EMPTY_FAMILIES: AdminRelationOption[] = [];
+
 export function CatalogQuickCreate({
   kind,
-  families = [],
+  families = EMPTY_FAMILIES,
   disabled = false,
   create,
   createFamily,

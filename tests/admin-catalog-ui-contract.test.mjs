@@ -542,6 +542,29 @@ test("quick unit creator sends only essential normalized fields and returns the 
   ]);
 });
 
+test("quick family creator settles after syncing its omitted families default", () => {
+  const harness = createHookHarness();
+  const overrides = new Map([
+    ["react", harness.react],
+    ["sonner", { toast: { success() {} } }],
+  ]);
+  const { CatalogQuickCreate } = loadProjectModule(
+    "components/admin/catalog/catalog-quick-create.tsx",
+    overrides,
+  );
+  const props = {
+    kind: "family",
+    async create() { return { ok: true, data: { id: FAMILY_ID } }; },
+    onCreated() {},
+  };
+
+  const initialRender = harness.render(CatalogQuickCreate, props);
+  initialRender.flushEffects();
+  const settledRender = harness.render(CatalogQuickCreate, props);
+
+  assert.equal(settledRender.effectCount, 0);
+});
+
 test("variant dialog appends and selects every relation created inline", () => {
   const harness = createHookHarness();
   function QuickCreate() { return null; }
@@ -1158,6 +1181,7 @@ function createHookHarness() {
       const currentEffects = effects;
       return {
         tree,
+        effectCount: currentEffects.length,
         flushEffects() {
           for (const effect of currentEffects) effect();
         },
