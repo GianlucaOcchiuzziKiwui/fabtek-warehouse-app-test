@@ -105,7 +105,7 @@ async function RequestCatalogContent({
   }
 }
 
-export default async function RequestMaterialsPage({ searchParams }: { searchParams: RequestSearchParams }) {
+async function RequestMaterialsContent({ searchParams }: { searchParams: RequestSearchParams }) {
   const params = await searchParams;
   const editHeaderHref = buildRequestHeaderHref({
     variantId: firstValue(params.variantId) ?? firstValue(params.requestVariant),
@@ -128,5 +128,13 @@ export default async function RequestMaterialsPage({ searchParams }: { searchPar
         </Suspense>
       </RequestMaterialsGate>
     </div>
+  );
+}
+
+export default function RequestMaterialsPage({ searchParams }: { searchParams: RequestSearchParams }) {
+  return (
+    <Suspense fallback={<RequestCatalogLoading />}>
+      <RequestMaterialsContent searchParams={searchParams} />
+    </Suspense>
   );
 }
