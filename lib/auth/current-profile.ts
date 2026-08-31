@@ -88,3 +88,12 @@ export async function requirePermission(permission: AppPermission) {
 
   return profile;
 }
+
+export async function getCurrentUserEmail(): Promise<string | null> {
+  const supabase = await createClient();
+  const { data, error } = await supabase.auth.getClaims();
+  const email = data?.claims?.email;
+
+  if (error || typeof email !== "string") return null;
+  return email.trim() || null;
+}
