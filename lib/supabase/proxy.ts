@@ -11,10 +11,6 @@ export async function updateSession(request: NextRequest) {
     request,
   });
 
-  if (request.nextUrl.pathname === "/api/internal/jobs") {
-    return supabaseResponse;
-  }
-
   const isPublicRoute = isPublicAuthRoute(request.nextUrl.pathname);
 
   if (!hasEnvVars) {

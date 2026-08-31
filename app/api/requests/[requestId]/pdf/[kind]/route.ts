@@ -23,8 +23,6 @@ type RequestPdfRouteDependencies = {
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
-export const runtime = "nodejs";
-
 async function loadCurrentProfile() {
   const { getCurrentProfile } = await import(
     "../../../../../../lib/auth/current-profile.ts"

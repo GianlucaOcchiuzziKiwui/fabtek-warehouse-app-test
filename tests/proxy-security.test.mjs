@@ -62,18 +62,11 @@ test.after(() => {
   else process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = previousKey;
 });
 
-test("only the exact scheduler route bypasses the Supabase session redirect", async () => {
+test("the removed scheduler route follows the normal Supabase session redirect", async () => {
   clientCreations = 0;
 
-  const schedulerResponse = await proxy(new NextRequest(
-    "https://materiali.fabtek.it/api/internal/jobs?source=scheduler",
-  ));
-
-  assert.equal(schedulerResponse.status, 200);
-  assert.equal(schedulerResponse.headers.get("x-middleware-next"), "1");
-  assert.equal(clientCreations, 0);
-
   for (const pathname of [
+    "/api/internal/jobs",
     "/api/internal/jobs/extra",
     "/api/internal/job",
     "/api/internal/health",
@@ -90,5 +83,5 @@ test("only the exact scheduler route bypasses the Supabase session redirect", as
     );
   }
 
-  assert.equal(clientCreations, 4);
+  assert.equal(clientCreations, 5);
 });
