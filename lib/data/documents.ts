@@ -125,6 +125,7 @@ export type DocumentDataErrorCode =
   | "INVALID_GENERATED_PDF"
   | "LOAD_AUTHORIZED_DOCUMENT_FAILED"
   | "DOWNLOAD_AUTHORIZED_DOCUMENT_FAILED"
+  | "LOAD_AUTHORIZED_OFFICIAL_SOURCE_FAILED"
   | "COMPLETE_NOTIFICATION_JOB_FAILED"
   | "FAIL_NOTIFICATION_JOB_FAILED"
   | "NOTIFICATION_JOB_LEASE_LOST";
@@ -146,7 +147,7 @@ type SessionClient = Awaited<ReturnType<
 type DocumentDataDependencies = {
   createClient: () => AdminClient;
 };
-type AuthorizedDocumentDependencies = {
+export type AuthorizedDocumentDependencies = {
   createClient: () => SessionClient | Promise<SessionClient>;
 };
 
@@ -698,6 +699,60 @@ export async function getAuthorizedDocument(
   } catch (error) {
     if (error instanceof DocumentDataError) throw error;
     return documentDataError("LOAD_AUTHORIZED_DOCUMENT_FAILED");
+  }
+}
+
+export async function loadAuthorizedOfficialPdfSource(
+  requestId: string,
+  kind: OfficialDocumentKind,
+  dependencies: Partial<AuthorizedDocumentDependencies> = {},
+): Promise<OfficialPdfSource | null> {
+  if (!UUID_PATTERN.test(requestId) || !DOCUMENT_KINDS.has(kind)) {
+    return documentDataError("INVALID_OFFICIAL_SOURCE_RESPONSE");
+  }
+
+  const createClient = dependencies.createClient ?? createSessionClient;
+  try {
+    const supabase = await createClient();
+    const { data: request, error } = await supabase
+      .from("material_requests")
+      .select(REQUEST_SELECT)
+      .eq("id", requestId)
+      .maybeSingle();
+    if (error) return documentDataError("LOAD_AUTHORIZED_OFFICIAL_SOURCE_FAILED");
+    if (!request) return null;
+
+    const linesPromise = collectPaginatedRows(async (from, to) => {
+      const response = await supabase
+        .from("material_request_lines")
+        .select(REQUEST_LINE_SELECT)
+        .eq("request_id", requestId)
+        .order("created_at", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to);
+      return { data: response.data, error: response.error };
+    });
+    const fulfillmentsPromise = kind === "final_report"
+      ? collectPaginatedRows(async (from, to) => {
+        const response = await supabase
+          .from("fulfillment_events")
+          .select(FULFILLMENT_SELECT)
+          .eq("request_line.request_id", requestId)
+          .order("fulfilled_at", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to);
+        return { data: response.data, error: response.error };
+      })
+      : Promise.resolve([]);
+    const [lines, fulfillments] = await Promise.all([
+      linesPromise,
+      fulfillmentsPromise,
+    ]);
+
+    return mapOfficialSource(request, lines, fulfillments);
+  } catch (error) {
+    if (error instanceof DocumentDataError) throw error;
+    return documentDataError("LOAD_AUTHORIZED_OFFICIAL_SOURCE_FAILED");
   }
 }
 

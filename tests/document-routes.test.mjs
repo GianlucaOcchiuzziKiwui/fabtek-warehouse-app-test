@@ -266,6 +266,120 @@ test("official document route enforces profile state and returns a private PDF d
   assert.equal(Buffer.from(await response.arrayBuffer()).toString(), "%PDF-private");
 });
 
+function officialPdfSource(overrides = {}) {
+  return {
+    id: REQUEST_ID,
+    requestNumber: 42,
+    requestedAt: "2026-08-31T09:30:00.000Z",
+    requesterName: "Mario Rossi",
+    project: "Progetto Alfa",
+    toolLine: "Linea 1",
+    utilities: "Aria compressa",
+    notes: null,
+    status: "evasa",
+    lines: [{
+      id: "20000000-0000-4000-8000-000000000001",
+      fabtekCode: "FAB-001",
+      oracleSapioCode: null,
+      categoryName: "Categoria",
+      familyName: "Famiglia",
+      componentName: "Componente",
+      description: "Descrizione",
+      diameter: null,
+      material: "Acciaio",
+      connection: "Filettata",
+      unitOfMeasure: "pz",
+      requestedQuantity: 1,
+      fulfilledQuantity: 1,
+      fulfillments: [{
+        id: "40000000-0000-4000-8000-000000000001",
+        quantity: 1,
+        fulfilledAt: "2026-08-31T10:30:00.000Z",
+        notes: null,
+      }],
+    }],
+    ...overrides,
+  };
+}
+
+test("on-demand request PDF route authorizes, validates, gates final reports, and returns a private attachment", async () => {
+  const route = await import("../app/api/requests/[requestId]/pdf/[kind]/route.ts");
+  const activeProfile = {
+    id: "30000000-0000-4000-8000-000000000001",
+    full_name: "Mario Rossi",
+    role: "user",
+    is_active: true,
+  };
+  const request = new Request("http://localhost/api/requests/10000000-0000-4000-8000-000000000001/pdf/initial_request");
+  const context = {
+    params: Promise.resolve({ requestId: REQUEST_ID, kind: "initial_request" }),
+  };
+  const invalidUuidContext = {
+    params: Promise.resolve({ requestId: "invalid", kind: "initial_request" }),
+  };
+  const invalidKindContext = {
+    params: Promise.resolve({ requestId: REQUEST_ID, kind: "draft" }),
+  };
+  const earlyFinalContext = {
+    params: Promise.resolve({ requestId: REQUEST_ID, kind: "final_report" }),
+  };
+
+  for (const [profile, status] of [
+    [null, 401],
+    [{ ...activeProfile, is_active: false }, 403],
+  ]) {
+    const handler = route.createRequestPdfHandler({
+      getProfile: async () => profile,
+      loadSource: async () => officialPdfSource(),
+      renderPdf: async () => Buffer.from("%PDF-on-demand"),
+      reportFailure: () => {},
+    });
+    assert.equal((await handler(request, context)).status, status);
+  }
+
+  let sourceLoads = 0;
+  const handler = route.createRequestPdfHandler({
+    getProfile: async () => activeProfile,
+    loadSource: async () => {
+      sourceLoads += 1;
+      return officialPdfSource();
+    },
+    renderPdf: async () => Buffer.from("%PDF-on-demand"),
+    reportFailure: () => {},
+  });
+  assert.equal((await handler(request, invalidUuidContext)).status, 404);
+  assert.equal((await handler(request, invalidKindContext)).status, 404);
+  assert.equal(sourceLoads, 0);
+
+  let renderCalls = 0;
+  const earlyFinalHandler = route.createRequestPdfHandler({
+    getProfile: async () => activeProfile,
+    loadSource: async () => officialPdfSource({ status: "evasa_parziale" }),
+    renderPdf: async () => {
+      renderCalls += 1;
+      return Buffer.from("%PDF-on-demand");
+    },
+    reportFailure: () => {},
+  });
+  assert.equal((await earlyFinalHandler(request, earlyFinalContext)).status, 409);
+  assert.equal(renderCalls, 0);
+
+  const invisibleHandler = route.createRequestPdfHandler({
+    getProfile: async () => activeProfile,
+    loadSource: async () => null,
+    renderPdf: async () => Buffer.from("%PDF-on-demand"),
+    reportFailure: () => {},
+  });
+  assert.equal((await invisibleHandler(request, context)).status, 404);
+
+  const response = await handler(request, context);
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("content-type"), "application/pdf");
+  assert.equal(response.headers.get("content-disposition"), 'attachment; filename="fabtek-richiesta-000042.pdf"');
+  assert.equal(response.headers.get("cache-control"), "private, no-store");
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), Buffer.from("%PDF-on-demand"));
+});
+
 test("request detail exposes accessible document states and download labels", async () => {
   const source = await readFile("components/requests/request-detail.tsx", "utf8");
 
