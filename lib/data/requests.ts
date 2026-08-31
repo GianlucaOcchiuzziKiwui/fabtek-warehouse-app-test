@@ -9,7 +9,6 @@ import {
   type FulfillmentHistoryItem,
   type ManagedRequestListItem,
   type RequestDetail,
-  type RequestDocumentView,
   type RequestLineDetail,
   type RequestListItem,
 } from "@/lib/data/request-mappers";
@@ -24,7 +23,6 @@ import { createClient } from "@/lib/supabase/server";
 export type {
   FulfillmentHistoryItem,
   RequestDetail,
-  RequestDocumentView,
   RequestLineDetail,
   RequestListItem,
   ManagedRequestListItem,
@@ -70,13 +68,7 @@ const REQUEST_DETAIL_SELECT = `
   tool_line,
   utilities,
   notes,
-  status,
-  documents:generated_documents(
-    id,
-    document_type,
-    status,
-    completed_at
-  )
+  status
 `;
 
 const REQUEST_LINE_SELECT = `

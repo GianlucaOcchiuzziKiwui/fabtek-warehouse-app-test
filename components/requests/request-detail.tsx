@@ -1,13 +1,12 @@
 import { RequestStatusBadge } from "@/components/requests/request-status-badge";
 import { FulfillmentForm } from "@/components/admin/fulfillment-form";
-import { Button } from "@/components/ui/button";
+import { RequestPdfDownloadButton } from "@/components/requests/request-pdf-download-button";
 import type {
   FulfillmentHistoryItem,
   RequestDetail as RequestDetailData,
-  RequestDocumentView,
   RequestLineDetail,
 } from "@/lib/data/requests";
-import { CheckCircle2, Clock3, Download, FileText } from "lucide-react";
+import { CheckCircle2, Clock3 } from "lucide-react";
 
 function QuantitySummary({ line }: { line: RequestLineDetail }) {
   const values = [
@@ -41,39 +40,6 @@ function FulfillmentItem({ item }: { item: FulfillmentHistoryItem }) {
         </time>
       </div>
       {item.notes ? <p className="text-sm text-muted-foreground">{item.notes}</p> : null}
-    </li>
-  );
-}
-
-function RequestDocument({ document }: { document: RequestDocumentView }) {
-  const statusLabel = document.status === "failed"
-    ? "Non disponibile"
-    : document.status === "completed"
-      ? document.completedAtLabel
-        ? `Disponibile dal ${document.completedAtLabel}`
-        : "Disponibile"
-      : "In preparazione";
-
-  return (
-    <li className="flex flex-col gap-3 rounded-lg border border-border bg-background p-4 sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex min-w-0 items-start gap-3">
-        <FileText aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-primary" />
-        <div>
-          <h3 className="font-semibold text-foreground">{document.label}</h3>
-          <p className="mt-1 text-sm text-muted-foreground">{statusLabel}</p>
-        </div>
-      </div>
-      {document.canDownload ? (
-        <Button asChild variant="outline" className="min-h-10 w-full sm:w-auto">
-          <a
-            href={`/api/documents/${document.id}`}
-            aria-label={`Scarica PDF: ${document.label}`}
-          >
-            <Download aria-hidden="true" />
-            Scarica PDF
-          </a>
-        </Button>
-      ) : null}
     </li>
   );
 }
@@ -212,15 +178,24 @@ export function RequestDetail({
         <h2 id="request-documents-heading" className="font-heading text-2xl font-semibold text-foreground">
           Documenti
         </h2>
-        {request.documents.length === 0 ? (
-          <p className="mt-3 text-sm text-muted-foreground">Nessun documento disponibile.</p>
-        ) : (
-          <ul className="mt-4 space-y-3">
-            {request.documents.map((document) => (
-              <RequestDocument key={document.id} document={document} />
-            ))}
-          </ul>
-        )}
+        <div className="mt-4 flex flex-col items-start gap-3">
+          <RequestPdfDownloadButton
+            requestId={request.id}
+            kind="initial_request"
+            label="Genera PDF richiesta"
+          />
+          {request.canGenerateFinalReport ? (
+            <RequestPdfDownloadButton
+              requestId={request.id}
+              kind="final_report"
+              label="Genera report finale"
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {"Il report finale sar\u00e0 disponibile quando la richiesta sar\u00e0 completamente evasa."}
+            </p>
+          )}
+        </div>
       </section>
 
       <section aria-labelledby="request-lines-heading" className="space-y-4">

@@ -1,7 +1,55 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { registerHooks } from "node:module";
+import path from "node:path";
+import { createRequire, registerHooks } from "node:module";
 import test from "node:test";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { transformSync } from "next/dist/build/swc/index.js";
+
+const projectRequire = createRequire(import.meta.url);
+const projectRoot = process.cwd();
+
+function loadProjectModule(relativePath, overrides = new Map(), cache = new Map()) {
+  const filename = path.resolve(projectRoot, relativePath);
+  if (cache.has(filename)) return cache.get(filename).exports;
+
+  const source = projectRequire("node:fs").readFileSync(filename, "utf8");
+  const loadedModule = { exports: {} };
+  cache.set(filename, loadedModule);
+  const { code } = transformSync(source, {
+    filename,
+    jsc: {
+      parser: { syntax: "typescript", tsx: filename.endsWith(".tsx") },
+      target: "es2022",
+      transform: { react: { runtime: "automatic" } },
+    },
+    module: { type: "commonjs" },
+  });
+
+  function localRequire(specifier) {
+    if (overrides.has(specifier)) return overrides.get(specifier);
+    if (specifier.startsWith("@/")) {
+      const resolved = path.resolve(projectRoot, specifier.slice(2));
+      for (const extension of ["", ".ts", ".tsx"]) {
+        const candidate = `${resolved}${extension}`;
+        try {
+          return loadProjectModule(path.relative(projectRoot, candidate), overrides, cache);
+        } catch (error) {
+          if (error?.code !== "ENOENT") throw error;
+        }
+      }
+    }
+    return projectRequire(specifier);
+  }
+
+  new Function("require", "module", "exports", code)(
+    localRequire,
+    loadedModule,
+    loadedModule.exports,
+  );
+  return loadedModule.exports;
+}
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
@@ -380,15 +428,183 @@ test("on-demand request PDF route authorizes, validates, gates final reports, an
   assert.deepEqual(Buffer.from(await response.arrayBuffer()), Buffer.from("%PDF-on-demand"));
 });
 
-test("request detail exposes accessible document states and download labels", async () => {
-  const source = await readFile("components/requests/request-detail.tsx", "utf8");
+function requestDetailView(canGenerateFinalReport) {
+  return {
+    id: REQUEST_ID,
+    requestNumber: 42,
+    requestedAt: "2026-08-31T09:30:00.000Z",
+    requestedAtLabel: "31/08/2026, 11:30",
+    project: "Progetto Alfa",
+    toolLine: "Linea 1",
+    utilities: "Aria compressa",
+    notes: null,
+    status: canGenerateFinalReport
+      ? { label: "In preparazione", tone: "pending" }
+      : { label: "Evasa", tone: "good" },
+    canGenerateFinalReport,
+    lines: [{
+      id: "20000000-0000-4000-8000-000000000001",
+      fabtekCode: "FAB-001",
+      oracleSapioCode: null,
+      categoryName: "Categoria",
+      familyName: "Famiglia",
+      componentName: "Componente",
+      description: "Descrizione",
+      diameter: null,
+      material: "Acciaio",
+      connection: "Filettata",
+      unitOfMeasure: "pz",
+      requestedQuantity: 1,
+      fulfilledQuantity: 0,
+      remainingQuantity: 1,
+      status: { label: "In preparazione", tone: "pending" },
+      fulfillments: [],
+    }],
+  };
+}
 
-  assert.match(source, /<h2[^>]*>\s*Documenti/u);
-  assert.match(source, /In preparazione/u);
-  assert.match(source, /Non disponibile/u);
-  assert.match(source, /href=\{`\/api\/documents\/\$\{document\.id\}`\}/u);
-  assert.match(source, /aria-label=\{`Scarica PDF: \$\{document\.label\}`\}/u);
-  assert.match(source, /min-h-10/u);
+test("request detail renders on-demand PDF actions from the explicit final-report capability", () => {
+  const { RequestDetail } = loadProjectModule("components/requests/request-detail.tsx", new Map([
+    ["@/components/admin/fulfillment-form", { FulfillmentForm: () => null }],
+    ["@/components/requests/request-status-badge", {
+      RequestStatusBadge: ({ status }) => React.createElement("span", null, status.label),
+    }],
+  ]));
+
+  const preparationHtml = renderToStaticMarkup(React.createElement(RequestDetail, {
+    request: requestDetailView(false),
+  }));
+  const completedHtml = renderToStaticMarkup(React.createElement(RequestDetail, {
+    request: requestDetailView(true),
+  }));
+
+  assert.match(preparationHtml, /Genera PDF richiesta/u);
+  assert.doesNotMatch(preparationHtml, /Genera report finale/u);
+  assert.match(preparationHtml, /Il report finale sar\u00e0 disponibile/u);
+  assert.match(completedHtml, /Genera PDF richiesta/u);
+  assert.match(completedHtml, /Genera report finale/u);
+});
+
+function loadRequestPdfButton() {
+  const state = [];
+  let stateIndex = 0;
+  const TestButton = (props) => React.createElement("button", props);
+  const { RequestPdfDownloadButton } = loadProjectModule(
+    "components/requests/request-pdf-download-button.tsx",
+    new Map([
+      ["react", {
+        ...React,
+        useState(initialValue) {
+          const index = stateIndex++;
+          if (!(index in state)) state[index] = initialValue;
+          return [state[index], (value) => {
+            state[index] = typeof value === "function" ? value(state[index]) : value;
+          }];
+        },
+      }],
+      ["@/components/ui/button", { Button: TestButton }],
+    ]),
+  );
+
+  function render() {
+    stateIndex = 0;
+    return RequestPdfDownloadButton({
+      requestId: REQUEST_ID,
+      kind: "initial_request",
+      label: "Genera PDF richiesta",
+    });
+  }
+
+  function button() {
+    return render().props.children[0];
+  }
+
+  return { button, render };
+}
+
+function replaceGlobal(name, value) {
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, name);
+  Object.defineProperty(globalThis, name, {
+    configurable: true,
+    writable: true,
+    value,
+  });
+  return () => {
+    if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+    else delete globalThis[name];
+  };
+}
+
+test("request PDF download button downloads one PDF while busy and reports failed responses accessibly", async () => {
+  let fetchCalls = 0;
+  let resolveResponse;
+  let revokedObjectUrl = null;
+  const blob = new Blob(["%PDF-on-demand"], { type: "application/pdf" });
+  const anchors = [];
+  const restoredGlobals = [
+    replaceGlobal("fetch", async (url) => {
+      fetchCalls += 1;
+      assert.equal(url, `/api/requests/${REQUEST_ID}/pdf/initial_request`);
+      return new Promise((resolve) => { resolveResponse = resolve; });
+    }),
+    replaceGlobal("URL", {
+      createObjectURL(value) {
+        assert.equal(value, blob);
+        return "blob:request-pdf";
+      },
+      revokeObjectURL(value) {
+        revokedObjectUrl = value;
+      },
+    }),
+    replaceGlobal("document", {
+      body: { append(anchor) { anchors.push(anchor); } },
+      createElement(tagName) {
+        assert.equal(tagName, "a");
+        return {
+          click() { this.clicked = true; },
+          remove() { this.removed = true; },
+        };
+      },
+    }),
+  ];
+
+  try {
+    const downloadButton = loadRequestPdfButton();
+    const firstDownload = downloadButton.button().props.onClick();
+    const busyButton = downloadButton.button();
+
+    assert.equal(busyButton.props["aria-busy"], true);
+    await busyButton.props.onClick();
+    assert.equal(fetchCalls, 1);
+
+    resolveResponse({
+      ok: true,
+      headers: new Headers({ "content-type": "application/pdf" }),
+      blob: async () => blob,
+    });
+    await firstDownload;
+
+    assert.equal(anchors.length, 1);
+    assert.equal(anchors[0].href, "blob:request-pdf");
+    assert.equal(anchors[0].download, "fabtek-richiesta.pdf");
+    assert.equal(anchors[0].clicked, true);
+    assert.equal(anchors[0].removed, true);
+    assert.equal(revokedObjectUrl, "blob:request-pdf");
+
+    replaceGlobal("fetch", async () => ({
+      ok: false,
+      headers: new Headers(),
+      json: async () => ({ error: "Errore interno" }),
+    }));
+    const failedButton = loadRequestPdfButton();
+    await failedButton.button().props.onClick();
+    const errorHtml = renderToStaticMarkup(failedButton.render());
+
+    assert.match(errorHtml, /role="alert"/u);
+    assert.match(errorHtml, /Non \u00e8 stato possibile generare il PDF/u);
+  } finally {
+    for (const restore of restoredGlobals.reverse()) restore();
+  }
 });
 
 function schedulerDependencies(overrides = {}) {

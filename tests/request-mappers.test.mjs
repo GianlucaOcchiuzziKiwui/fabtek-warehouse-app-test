@@ -13,7 +13,6 @@ import {
 
 const REQUEST_ID = "10000000-0000-4000-8000-000000000001";
 const LINE_ID = "20000000-0000-4000-8000-000000000001";
-const DOCUMENT_ID = "50000000-0000-4000-8000-000000000001";
 
 function event({
   id,
@@ -39,7 +38,6 @@ function requestRow(lineOverrides = {}) {
     utilities: "Aria compressa",
     notes: "Consegna al reparto nord",
     status: "evasa_parziale",
-    documents: [],
     lines: [{
       id: LINE_ID,
       snapshot_fabtek_code: "FT-001",
@@ -62,82 +60,13 @@ function requestRow(lineOverrides = {}) {
   };
 }
 
-test("maps official document metadata without exposing storage internals", () => {
-  const detail = mapRequestDetail({
-    ...requestRow(),
-    documents: [{
-      id: DOCUMENT_ID,
-      document_type: "initial_request",
-      status: "completed",
-      completed_at: "2026-08-28T10:05:00.000Z",
-    }],
-  });
+test("maps request details without document records and derives final-report availability from the raw status", () => {
+  const preparation = mapRequestDetail(requestRow());
+  const completed = mapRequestDetail({ ...requestRow(), status: "evasa" });
 
-  assert.deepEqual(detail.documents, [{
-    id: DOCUMENT_ID,
-    kind: "initial_request",
-    label: "Richiesta ufficiale",
-    status: "completed",
-    completedAtLabel: "28/08/2026, 12:05",
-    canDownload: true,
-  }]);
-  assert.equal("storagePath" in detail.documents[0], false);
-  assert.equal("lastError" in detail.documents[0], false);
-});
-
-test("orders official documents and keeps pending documents non-downloadable", () => {
-  const detail = mapRequestDetail({
-    ...requestRow(),
-    documents: [
-      {
-        id: "50000000-0000-4000-8000-000000000002",
-        document_type: "final_report",
-        status: "pending",
-        completed_at: null,
-      },
-      {
-        id: DOCUMENT_ID,
-        document_type: "initial_request",
-        status: "processing",
-        completed_at: null,
-      },
-    ],
-  });
-
-  assert.deepEqual(detail.documents.map((document) => document.kind), [
-    "initial_request",
-    "final_report",
-  ]);
-  assert.deepEqual(detail.documents.map((document) => document.canDownload), [
-    false,
-    false,
-  ]);
-  assert.deepEqual(detail.documents.map((document) => document.completedAtLabel), [
-    null,
-    null,
-  ]);
-});
-
-test("rejects unknown official document types and states", () => {
-  for (const document of [
-    {
-      id: DOCUMENT_ID,
-      document_type: "packing_list",
-      status: "completed",
-      completed_at: "2026-08-28T10:05:00.000Z",
-    },
-    {
-      id: DOCUMENT_ID,
-      document_type: "initial_request",
-      status: "cancelled",
-      completed_at: null,
-    },
-  ]) {
-    assert.throws(
-      () => mapRequestDetail({ ...requestRow(), documents: [document] }),
-      { name: "RequestMappingError" },
-    );
-  }
+  assert.equal("documents" in preparation, false);
+  assert.equal(preparation.canGenerateFinalReport, false);
+  assert.equal(completed.canGenerateFinalReport, true);
 });
 
 test("maps every request status to an explicit Italian label", () => {
