@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { registerHooks } from "node:module";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
+import { getDocument, OPS } from "pdfjs-dist/legacy/build/pdf.mjs";
 import typescript from "typescript";
 
 registerHooks({
@@ -24,6 +24,7 @@ registerHooks({
 });
 
 const { getPdfFilename } = await import("../lib/pdf/contracts.ts");
+const { mapOfficialPdfDocument } = await import("../lib/pdf/mappers.ts");
 const { renderPdfDocument } = await import("../lib/pdf/render-pdf.tsx");
 
 async function extractPdfPages(buffer) {
@@ -49,6 +50,32 @@ async function extractPdfPages(buffer) {
 
 async function extractPdfText(buffer) {
   return (await extractPdfPages(buffer)).map((page) => page.text).join("\n");
+}
+
+async function extractFirstPageFillColors(buffer) {
+  const loadingTask = getDocument({
+    data: new Uint8Array(buffer),
+    useSystemFonts: true,
+  });
+  const pdf = await loadingTask.promise;
+  const page = await pdf.getPage(1);
+  const operators = await page.getOperatorList();
+  const colors = operators.fnArray.flatMap((operator, index) => {
+    if (operator !== OPS.setFillRGBColor) return [];
+    const args = operators.argsArray[index];
+    if (args.length === 1 && typeof args[0] === "string") {
+      return [args[0].toLowerCase()];
+    }
+    const channels = args.length === 1 && args[0]?.length === 3
+      ? Array.from(args[0])
+      : Array.from(args);
+    const hex = channels.map((channel) => Math.round(
+      channel <= 1 ? channel * 255 : channel,
+    ).toString(16).padStart(2, "0")).join("");
+    return [`#${hex}`];
+  });
+  await loadingTask.destroy();
+  return colors;
 }
 
 const line = {
@@ -148,6 +175,81 @@ test("renders the current request status as a header badge in every PDF kind", a
     assert.ok(
       Math.abs(headerStatusItems[0].y - titleItem.y) < 4,
       `${document.kind} status must stay aligned with the title`,
+    );
+  }
+});
+
+test("maps every request status to the matching PDF badge tone", () => {
+  const source = {
+    id: "10000000-0000-4000-8000-000000000001",
+    requestNumber: 17,
+    requestedAt: "2026-08-31T09:30:00.000Z",
+    requesterName: "Mario Rossi",
+    project: "P-44",
+    toolLine: "TL-2",
+    utilities: "Aria compressa",
+    notes: null,
+    status: "in_preparazione",
+    lines: [{
+      id: "20000000-0000-4000-8000-000000000001",
+      ...line,
+      fulfilledQuantity: 0,
+      fulfillments: [],
+    }],
+  };
+
+  for (const [status, statusLabel, statusTone] of [
+    ["in_preparazione", "In preparazione", "pending"],
+    ["evasa_parziale", "Evasa parzialmente", "warning"],
+    ["evasa", "Evasa", "good"],
+  ]) {
+    const document = mapOfficialPdfDocument({ ...source, status }, "initial_request");
+    assert.equal(document.statusLabel, statusLabel);
+    assert.equal(document.statusTone, statusTone);
+  }
+});
+
+test("renders PDF status badges with the UI semantic palette", async () => {
+  const documents = [
+    {
+      document: { kind: "draft", ...common },
+      foreground: "#5b6472",
+      background: "#eaecef",
+    },
+    {
+      document: {
+        kind: "initial_request",
+        requestNumber: 17,
+        statusLabel: "Evasa parzialmente",
+        statusTone: "warning",
+        ...common,
+      },
+      foreground: "#8c550c",
+      background: "#fbeedd",
+    },
+    {
+      document: {
+        kind: "final_report",
+        requestNumber: 17,
+        statusLabel: "Evasa",
+        statusTone: "good",
+        ...common,
+        lines: [{ ...line, fulfilledQuantity: 10, remainingQuantity: 0, fulfillments: [] }],
+      },
+      foreground: "#246b42",
+      background: "#e4f3ea",
+    },
+  ];
+
+  for (const { document, foreground, background } of documents) {
+    const colors = await extractFirstPageFillColors(await renderPdfDocument(document));
+    assert.ok(
+      colors.includes(foreground),
+      `${document.kind} badge must use ${foreground}; rendered ${colors.join(", ")}`,
+    );
+    assert.ok(
+      colors.includes(background),
+      `${document.kind} badge must use ${background}; rendered ${colors.join(", ")}`,
     );
   }
 });

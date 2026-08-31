@@ -4,7 +4,7 @@ import type {
   OfficialPdfSource,
 } from "@/lib/data/documents";
 import type { SubmitRequestInput } from "@/lib/domain/requests/contracts";
-import type { PdfDocument, PdfLine } from "./contracts";
+import type { PdfDocument, PdfLine, PdfStatusTone } from "./contracts";
 
 const DOCUMENT_DATE_FORMATTER = new Intl.DateTimeFormat("it-IT", {
   day: "2-digit",
@@ -70,14 +70,17 @@ function validateLineSnapshot(line: OfficialPdfLineSource) {
   }
 }
 
-function statusLabel(status: OfficialPdfSource["status"]): string {
+function statusView(status: OfficialPdfSource["status"]): {
+  statusLabel: string;
+  statusTone: PdfStatusTone;
+} {
   switch (status) {
     case "in_preparazione":
-      return "In preparazione";
+      return { statusLabel: "In preparazione", statusTone: "pending" };
     case "evasa_parziale":
-      return "Evasa parzialmente";
+      return { statusLabel: "Evasa parzialmente", statusTone: "warning" };
     case "evasa":
-      return "Evasa";
+      return { statusLabel: "Evasa", statusTone: "good" };
     default:
       return mappingError("INVALID_OFFICIAL_PDF_SOURCE");
   }
@@ -239,7 +242,7 @@ export function mapOfficialPdfDocument(
     toolLine: source.toolLine.trim(),
     utilities: source.utilities.trim(),
     notes: source.notes?.trim() || null,
-    statusLabel: statusLabel(source.status),
+    ...statusView(source.status),
     documentDateLabel: DOCUMENT_DATE_FORMATTER.format(new Date(source.requestedAt)),
     lines: source.lines.map((line) => mapOfficialLine(line, kind)),
   };

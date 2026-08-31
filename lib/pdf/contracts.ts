@@ -31,10 +31,12 @@ type PdfCommon = {
   lines: PdfLine[];
 };
 
+export type PdfStatusTone = "pending" | "warning" | "good";
+
 export type PdfDocument =
   | ({ kind: "draft" } & PdfCommon)
-  | ({ kind: "initial_request"; requestNumber: number; statusLabel: string } & PdfCommon)
-  | ({ kind: "final_report"; requestNumber: number; statusLabel: string } & PdfCommon);
+  | ({ kind: "initial_request"; requestNumber: number; statusLabel: string; statusTone: PdfStatusTone } & PdfCommon)
+  | ({ kind: "final_report"; requestNumber: number; statusLabel: string; statusTone: PdfStatusTone } & PdfCommon);
 
 export function getPdfFilename(document: PdfDocument) {
   if (document.kind === "draft") return "fabtek-distinta-bozza.pdf";

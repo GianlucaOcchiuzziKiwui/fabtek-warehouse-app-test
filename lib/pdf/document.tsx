@@ -1,13 +1,10 @@
 import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 
-import type { PdfDocument, PdfLine } from "./contracts.ts";
+import type { PdfDocument, PdfLine, PdfStatusTone } from "./contracts.ts";
 
 const colors = {
   navy: "#0b2545",
-  ochre: "#b8752b",
-  darkOchre: "#a4611f",
   lightGray: "#f2f2f2",
-  white: "#ffffff",
 };
 
 const styles = StyleSheet.create({
@@ -16,7 +13,10 @@ const styles = StyleSheet.create({
   brand: { fontSize: 18, fontWeight: 600, color: colors.navy },
   titleRow: { marginTop: 4, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   title: { fontSize: 12, fontWeight: 600, color: colors.navy },
-  statusBadge: { marginLeft: 8, paddingVertical: 3, paddingHorizontal: 7, borderRadius: 3, backgroundColor: colors.darkOchre, color: colors.white, fontSize: 7, fontWeight: 600 },
+  statusBadge: { marginLeft: 8, paddingVertical: 3, paddingHorizontal: 7, borderRadius: 3, fontSize: 7, fontWeight: 600 },
+  statusPending: { backgroundColor: "#eaecef", color: "#5b6472" },
+  statusWarning: { backgroundColor: "#fbeedd", color: "#8c550c" },
+  statusGood: { backgroundColor: "#e4f3ea", color: "#246b42" },
   section: { marginBottom: 14 },
   sectionTitle: { fontSize: 9, fontWeight: 600, color: colors.navy, marginBottom: 5 },
   requestGrid: { flexDirection: "row", flexWrap: "wrap", borderWidth: 1, borderColor: colors.lightGray },
@@ -41,12 +41,23 @@ const styles = StyleSheet.create({
   footer: { position: "absolute", left: 34, right: 34, bottom: 20, flexDirection: "row", justifyContent: "space-between", color: colors.navy, fontSize: 7 },
 });
 
-function PdfHeader({ title, status }: { title: string; status: string }) {
+function statusBadgeStyle(tone: PdfStatusTone) {
+  switch (tone) {
+    case "warning":
+      return styles.statusWarning;
+    case "good":
+      return styles.statusGood;
+    case "pending":
+      return styles.statusPending;
+  }
+}
+
+function PdfHeader({ title, status, statusTone }: { title: string; status: string; statusTone: PdfStatusTone }) {
   return <View style={styles.header}>
     <Text style={styles.brand}>FABTEK</Text>
     <View style={styles.titleRow}>
       <Text style={styles.title}>{title}</Text>
-      <Text style={styles.statusBadge}>{status}</Text>
+      <Text style={[styles.statusBadge, statusBadgeStyle(statusTone)]}>{status}</Text>
     </View>
   </View>;
 }
@@ -138,9 +149,10 @@ export function FabtekPdf({ document }: { document: PdfDocument }) {
       : `Report finale richiesta #${document.requestNumber}`;
 
   const status = document.kind === "draft" ? "Bozza" : document.statusLabel;
+  const statusTone = document.kind === "draft" ? "pending" : document.statusTone;
 
   return <Document title={title} author="Fabtek"><Page size="A4" style={styles.page} wrap>
-    <PdfHeader title={title} status={status} />
+    <PdfHeader title={title} status={status} statusTone={statusTone} />
     <RequestData document={document} />
     <MaterialTable document={document} />
     {document.kind === "draft" ? <DraftWarning /> : null}
