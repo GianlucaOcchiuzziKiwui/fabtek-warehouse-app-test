@@ -4,7 +4,7 @@ import test from "node:test";
 
 const migrationPath = "supabase/migrations/20260831120000_remove_generated_pdf_storage.sql";
 
-test("generated PDF cleanup deletes only objects, its read policy, and its bucket", async () => {
+test("generated PDF cleanup migration drops only the legacy read policy", async () => {
   const sql = await readFile(migrationPath, "utf8");
   const statements = sql
     .split(";")
@@ -12,11 +12,10 @@ test("generated PDF cleanup deletes only objects, its read policy, and its bucke
     .filter(Boolean);
 
   assert.deepEqual(statements, [
-    "delete from storage.objects where bucket_id = 'generated-documents'",
     "drop policy if exists storage_generated_documents_select_owner_or_admin on storage.objects",
-    "delete from storage.buckets where id = 'generated-documents'",
   ]);
 
+  assert.doesNotMatch(sql, /\bdelete\s+from\s+storage\.(?:objects|buckets)\b/iu);
   assert.doesNotMatch(sql, /\bdrop\s+(?:table|function)\b/iu);
   assert.doesNotMatch(sql, /\btruncate\b/iu);
   assert.doesNotMatch(sql, /\bgenerated_documents\b/iu);

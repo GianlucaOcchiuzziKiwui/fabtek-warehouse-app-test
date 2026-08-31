@@ -6,6 +6,12 @@ function isPublicAuthRoute(pathname: string) {
   return pathname === "/auth" || pathname.startsWith("/auth/");
 }
 
+const REQUEST_PDF_PATH = /^\/api\/requests\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/pdf\/(?:initial_request|final_report)$/iu;
+
+function isSelfAuthenticatingRequestPdfRoute(pathname: string) {
+  return REQUEST_PDF_PATH.test(pathname);
+}
+
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
@@ -53,7 +59,11 @@ export async function updateSession(request: NextRequest) {
   const { data } = await supabase.auth.getClaims();
   const user = data?.claims;
 
-  if (!user && !isPublicRoute) {
+  if (
+    !user
+    && !isPublicRoute
+    && !isSelfAuthenticatingRequestPdfRoute(request.nextUrl.pathname)
+  ) {
     const url = request.nextUrl.clone();
     url.pathname = "/auth/login";
     url.search = "";

@@ -31,7 +31,7 @@ Usare il file `mock.html` come riferimento per nomenclatura, funzionalità, layo
 - Consentire richieste multi-articolo con un flusso simile a un carrello.
 - Dare al richiedente visibilità sull'avanzamento di ogni singola riga.
 - Permettere al magazzino di registrare più consegne parziali nel tempo.
-- Generare documenti PDF ed email automatiche coerenti e tracciabili.
+- Generare documenti PDF coerenti direttamente al click, senza persistenza dei file.
 
 ## 3. Non obiettivi dell'MVP
 
@@ -185,7 +185,7 @@ La quantità parte sempre da `0` e deve essere un intero positivo. Se `track_inv
 - La richiesta creata ha stato iniziale `IN_PREPARAZIONE`.
 - Dopo l'invio, la richiesta non deve essere modificabile dal richiedente.
 
-### 6.5 PDF bozza, richiesta confermata ed email
+### 6.5 PDF bozza e documenti ufficiali on-demand
 
 Il file `mock pdf richiesta user.pdf` definisce i dati e la struttura visiva della distinta pre-invio. I valori presenti nel mock sono esempi, non dati di produzione.
 
@@ -213,15 +213,11 @@ La distinta contiene:
 - Connessione;
 - Quantità.
 
-La bozza deve riportare chiaramente: **Documento non ancora confermato al magazzino**. Non possiede progressivo, non prenota la disponibilità, non viene inviata via email e non viene conservata come documento ufficiale. Può essere prodotta lato client tramite una vista di stampa dedicata o lato server, purché usi soltanto i dati correnti del riepilogo.
+La bozza deve riportare chiaramente: **Documento non ancora confermato al magazzino**. Non possiede progressivo, non prenota la disponibilità e non viene conservata come documento ufficiale. Può essere prodotta lato client tramite una vista di stampa dedicata o lato server, purché usi soltanto i dati correnti del riepilogo.
 
-Dopo il commit, il sistema accoda invece il PDF ufficiale della richiesta confermata. Questo documento usa lo stesso nucleo di dati della bozza, aggiunge almeno progressivo, data effettiva di invio e stato, ed è generato dagli snapshot persistiti. Viene salvato in storage privato e inviato tramite Resend ai destinatari configurati nell'ambiente.
+Dopo il commit, dal dettaglio l'utente può generare al click il PDF ufficiale della richiesta confermata. Il documento usa lo stesso nucleo di dati della bozza, aggiunge almeno progressivo, data effettiva di invio e stato, ed è ricostruito dagli snapshot persistiti a ogni download. Il Route Handler autorizzato genera i byte in memoria e li restituisce nella stessa risposta HTTP con filename canonico e cache disabilitata: non salva file in database, filesystem, cache applicativa o Supabase Storage e non invia email.
 
-Oggetto email:
-
-`CMKT_RDM_{Tool/Line#}_{Utilities}_{Richiedente}_{Progressivo}`
-
-Il progressivo deve essere assegnato atomicamente dal database e garantire un identificativo univoco della richiesta. I valori usati nell'oggetto devono essere normalizzati. Un errore di generazione PDF o di invio email non annulla la richiesta: il job rimane tracciato e può essere ritentato senza duplicare l'invio.
+Il progressivo deve essere assegnato atomicamente dal database e garantire un identificativo univoco della richiesta. Un errore di generazione o download PDF non modifica la richiesta confermata; un nuovo click esegue una nuova generazione dai dati autorevoli.
 
 ### 6.6 Dati di esempio del PDF mock
 
@@ -341,20 +337,15 @@ Regole:
 Quando tutte le righe sono evase, nella stessa transazione che registra l'ultima evasione:
 
 1. la richiesta passa automaticamente a `EVASA`;
-2. viene accodato una sola volta un report PDF finale;
-3. per ogni riga il report mostra quantità richiesta, quantità consegnata e date delle consegne;
-4. il report viene inviato ai destinatari configurati.
-
-Oggetto email finale:
-
-`CMKT_RDM_{Tool/Line#}_{Utilities}_{Richiedente}_{Progressivo}_EVASA`
+2. il report PDF finale diventa generabile al click dal dettaglio;
+3. per ogni riga il report mostra quantità richiesta, quantità consegnata e date delle consegne.
 
 Dopo il completamento, l'Admin può archiviare la richiesta oppure eliminarla definitivamente. L'eliminazione definitiva:
 
 - è consentita solo per richieste `EVASA`;
 - richiede una conferma esplicita che dichiari l'operazione non recuperabile;
 - viene eseguita lato server in una transazione;
-- rimuove i dati dipendenti e i documenti dallo storage;
+- rimuove i dati dipendenti; non esistono file PDF ufficiali persistiti da eliminare;
 - lascia un evento di audit minimale con identificativo, progressivo, operatore e timestamp, senza conservare il contenuto eliminato.
 
 ## 11. Catalogo
@@ -604,26 +595,9 @@ La coppia (`request_id`, `item_variant_id`) è univoca e `quantita_richiesta` è
 - eventuali note
 - `idempotency_key` UUID univoca
 
-### GeneratedDocument
+### Metadata documentali legacy
 
-- richiesta associata
-- tipo: `INITIAL_REQUEST | FINAL_REPORT`
-- percorso storage e hash del contenuto
-- stato: `PENDING | PROCESSING | COMPLETED | FAILED`
-- numero tentativi, prossimo tentativo ed eventuale errore
-- timestamp di creazione e completamento
-- vincolo univoco (`request_id`, `document_type`)
-
-La distinta in bozza non è un `GeneratedDocument`: non esiste ancora una richiesta persistita e non deve essere trattata come documento ufficiale.
-
-### NotificationJob
-
-- richiesta e documento associati
-- tipo: `INITIAL_REQUEST | FINAL_REPORT`
-- destinatari e oggetto risolti al momento dell'accodamento
-- stato, tentativi, prossimo tentativo, errore e data invio
-- identificativo messaggio restituito da Resend
-- chiave di idempotenza univoca per richiesta e tipo
+Le tabelle `generated_documents` e `notification_jobs` possono restare temporaneamente nello schema per compatibilità con le RPC esistenti, ma non sono parte del flusso applicativo: nessun processo elabora le righe pendenti e nessun file ufficiale viene salvato. La loro rimozione sarà valutata insieme a una revisione dedicata delle RPC transazionali.
 
 ### AuditEvent
 
@@ -644,8 +618,7 @@ Le operazioni concorrenti devono essere implementate come funzioni PostgreSQL/RP
 4. assegna il progressivo tramite contatore database;
 5. crea richiesta e snapshot delle righe, inclusa la modalità inventario;
 6. incrementa le prenotazioni e registra i movimenti soltanto per le righe tracciate;
-7. accoda documento iniziale e notifica;
-8. esegue commit oppure rollback completo.
+7. esegue commit oppure rollback completo.
 
 **Evasione riga**
 
@@ -655,7 +628,7 @@ Le operazioni concorrenti devono essere implementate come funzioni PostgreSQL/RP
 4. rifiuta quantità non valida o superiore al residuo;
 5. registra sempre l'evasione e il movimento inventario soltanto per una variante tracciata;
 6. aggiorna prenotato e giacenza soltanto per una riga tracciata nello snapshot;
-7. se la richiesta diventa completamente evasa, accoda una sola volta report e notifica finale;
+7. se la richiesta diventa completamente evasa, rende disponibile la generazione on-demand del report finale;
 8. esegue commit oppure rollback completo.
 
 Il client non deve concatenare più scritture per simulare queste transazioni.
@@ -671,8 +644,8 @@ Il client non deve concatenare più scritture per simulare queste transazioni.
 - Una nuova evasione non può eccedere il residuo.
 - Ogni evasione conserva data e operatore; conserva anche un movimento inventario se e solo se la variante è tracciata.
 - Gli stati sono calcolati, non liberamente editabili.
-- Il progressivo e i nomi dei documenti sono generati lato server/database.
-- Invio email e generazione PDF sono tracciati, idempotenti e ritentabili.
+- Il progressivo e i nomi dei documenti sono generati lato server.
+- Ogni click rigenera il PDF ufficiale in memoria dagli snapshot e non persiste i byte.
 - Una modifica del catalogo non deve cambiare retroattivamente richieste e PDF storici.
 - Nessuna chiave privilegiata o URL permanente di un file privato viene esposto al browser.
 
@@ -705,8 +678,7 @@ Il prototipo HTML è un riferimento di flusso e direzione visiva, non codice di 
 - React 19;
 - Supabase Auth per autenticazione;
 - Supabase Postgres per dati, vincoli, funzioni transazionali e RLS;
-- Supabase Storage con bucket privati per datasheet e PDF;
-- Resend per email;
+- Supabase Storage con bucket privato per datasheet;
 - libreria PDF eseguita nel runtime Node.js di Next.js;
 - Tailwind CSS e componenti shadcn/ui per l'interfaccia.
 
@@ -716,11 +688,11 @@ Il repository installa attualmente Next.js `16.3.2` e React `19.2.8`. Prima dell
 
 - I Server Components leggono direttamente da Supabase tramite il client server, senza chiamare Route Handler interni.
 - Le mutazioni originate dalla UI usano Server Actions o Route Handler sottili, con validazione, controllo sessione e autorizzazione.
-- I Route Handler sono endpoint pubblicamente raggiungibili: ognuno deve verificare autenticazione e autorizzazione. Sono adatti a download, callback e worker schedulati.
+- I Route Handler sono endpoint pubblicamente raggiungibili: ognuno deve verificare autenticazione e autorizzazione. Sono adatti a download e callback.
 - `proxy.ts` aggiorna la sessione e può effettuare redirect ottimistici, ma non è un confine di autorizzazione.
 - La logica di dominio riusabile vive in un livello server dedicato, non nei componenti React.
 - Le invarianti concorrenti risiedono in vincoli e funzioni PostgreSQL, non soltanto nel codice Next.js.
-- Il browser usa solo URL Supabase e publishable key. Service role, chiavi Resend e segreti dei job restano lato server.
+- Il browser usa solo URL Supabase e publishable key. La service role resta lato server e non partecipa alla generazione PDF.
 
 ### 15.3 Autenticazione, utenti e RLS
 
@@ -729,23 +701,21 @@ Il repository installa attualmente Next.js `16.3.2` e React `19.2.8`. Prima dell
 - La gestione utenti usa la Supabase Admin API esclusivamente dal server. L'Admin può invitare, attivare, disattivare, cambiare ruolo e avviare il recupero password; non può leggere password esistenti.
 - Le policy RLS consentono allo User di leggere le proprie richieste e all'Admin di leggere e gestire quanto previsto.
 - Catalogo attivo e disponibilità sono leggibili dagli autenticati; le scritture sono Admin-only.
-- Eventi, movimenti, job e audit non sono scrivibili direttamente dal client.
+- Eventi, movimenti e audit non sono scrivibili direttamente dal client.
 - Le funzioni `security definer` impostano un `search_path` sicuro, hanno permessi `EXECUTE` espliciti e verificano identità e ruolo.
 - Server Actions e Route Handler ricontrollano sessione e ruolo: RLS è l'ultima linea di difesa, non l'unico controllo.
 
-### 15.4 PDF, storage ed email asincrone
+### 15.4 PDF on-demand e Storage
 
 - Il bucket `datasheets` è privato; la lettura avviene tramite autorizzazione o signed URL a scadenza breve e la scrittura è Admin-only.
-- Il bucket `generated-documents` è privato; un documento è accessibile solo al proprietario della richiesta e agli Admin.
 - I PDF sono prodotti dagli snapshot storici, non rileggendo descrizioni correnti dal catalogo.
 - La generazione usa il runtime Node.js, font incorporati e template versionato.
 - La bozza segue il riferimento visivo del PDF mock: formato A4 verticale, marchio in alto a sinistra, titolo in alto a destra, linea navy, griglia per l'intestazione, tabella tecnica degli articoli e nota di stato sotto la tabella.
 - Il template controlla direttamente intestazioni, piè di pagina e numerazione; non deve includere URL locali, titolo pagina o timestamp automatici del browser.
 - Con più righe o pagine, l'intestazione della tabella si ripete, le righe non vengono spezzate e ogni pagina mostra progressivo o indicazione di bozza e numerazione pagina.
-- Documento e notifica sono record di coda persistenti creati nella transazione di dominio.
-- Il worker acquisisce i job con lock e timeout, usa retry con backoff e lascia in `FAILED` i job che superano il limite; l'Admin può rilanciarli.
-- Resend riceve una chiave di idempotenza e il suo message ID viene salvato.
-- Lo scheduler della piattaforma di deploy invoca un Route Handler protetto che elabora la coda. Provider e frequenza vanno confermati prima del rilascio.
+- La richiesta ufficiale è generabile per ogni richiesta visibile; il report finale è generabile solo quando lo stato autorevole è `evasa`.
+- Il Route Handler usa il client Supabase della sessione e RLS, carica tutte le pagine di righe ed evasioni necessarie e restituisce direttamente il `Buffer` come attachment con `Cache-Control: private, no-store`.
+- Nessun PDF ufficiale viene persistito, caricato in Storage o inviato automaticamente via email.
 
 ### 15.5 Configurazione e segreti
 
@@ -757,13 +727,9 @@ Variabili pubbliche:
 Variabili solo server:
 
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `RESEND_API_KEY`
-- `EMAIL_FROM`
-- `REQUEST_EMAIL_RECIPIENTS`, lista separata da virgole e validata all'avvio
-- `JOB_RUNNER_SECRET`
-- eventuali valori di retry e base URL applicativa
+- eventuale base URL applicativa
 
-I destinatari non devono essere hardcoded. Locale, staging e produzione usano configurazioni e progetti Supabase distinti. Nessun segreto deve comparire nei log o nei file versionati.
+Locale, staging e produzione usano configurazioni e progetti Supabase distinti. Nessun segreto deve comparire nei log o nei file versionati.
 
 ### 15.6 Progressivo
 
@@ -804,7 +770,6 @@ Per una prima versione web utilizzabile:
 - evasione parziale articolo per articolo;
 - cronologia dei rilasci e dei movimenti;
 - PDF di bozza, richiesta iniziale e report finale;
-- email automatiche con coda, log e retry;
 - mini dashboard Admin con overview operativa;
 - deploy web responsive.
 
@@ -830,15 +795,15 @@ Sono rimandabili:
 10. Ogni consegna appare nella cronologia con data server e operatore, anche per varianti non tracciate.
 11. Lo stato di riga e richiesta cambia automaticamente secondo le quantità.
 12. Lo User vede gli aggiornamenti delle proprie richieste.
-13. Al completamento viene accodato una sola volta il report finale.
-14. Un errore PDF o Resend non annulla la richiesta e può essere ritentato senza invii duplicati.
-15. Il PDF storico mantiene i dati originari dopo modifiche al catalogo.
-16. Datasheet e PDF privati non sono accessibili tramite URL pubblico permanente.
+13. Al completamento il report finale diventa generabile al click e l'endpoint ripete il controllo dello stato.
+14. Un errore PDF non annulla né modifica la richiesta.
+15. Il PDF rigenerato mantiene gli snapshot originari dopo modifiche al catalogo.
+16. I PDF ufficiali non vengono persistiti né esposti tramite URL Storage; i datasheet privati non hanno URL pubblico permanente.
 17. Il ruolo non è modificabile dal browser e la service role non compare nel bundle client.
 18. L'eliminazione definitiva è limitata alle richieste evase, richiede conferma ed è registrata nell'audit minimale.
 19. L'app è usabile su tablet e smartphone senza scorrimenti orizzontali nei flussi principali.
 20. La distinta pre-invio riporta tutti i campi del PDF mock, è marcata come bozza e non contiene progressivo o artefatti del browser.
-21. La generazione della bozza non crea richieste, non prenota materiale, non salva documenti ufficiali e non invia email.
+21. La generazione della bozza non crea richieste, non prenota materiale e non salva documenti ufficiali.
 22. L'import del CSV crea 236 varianti senza duplicare i codici Fabtek o Oracle e conserva tutte le associazioni di categoria marcate con `X`.
 23. Un secondo import dello stesso file è idempotente e non duplica categorie, famiglie, componenti, varianti, riferimenti fornitore o asset.
 24. `#VALUE!`, `nd`, link non validi e alias categoria non risolti vengono segnalati e non diventano dati applicativi validi.
@@ -853,12 +818,11 @@ Decisioni confermate:
 - da **Cerca info materiali** si può iniziare una richiesta senza ripetere la navigazione;
 - colonne e filtri della lista richieste seguono `mock.html`;
 - il progressivo è gestito dal database e non dalla UI;
-- i destinatari email sono configurati tramite una lista nell'ambiente;
 - l'eliminazione definitiva delle richieste completate è consentita;
 - le 14 categorie canoniche sono seed modificabili dagli Admin; il CSV aggiunge alias esterni, sei famiglie effettivamente utilizzate e 236 varianti;
 - `Utilities` è un testo libero inserito dall'utente ed è distinto dalla categoria del catalogo;
 - `mock pdf richiesta user.pdf` è il riferimento dati e visivo per la distinta pre-invio;
-- stack: Next.js, Supabase Auth/Postgres/Storage, PDF lato Next.js e Resend;
+- stack: Next.js, Supabase Auth/Postgres, Storage per i datasheet e PDF on-demand lato Next.js;
 - sono richieste la gestione utenti completa per Admin e una mini dashboard operativa.
 
 Punti da confermare prima della produzione:
@@ -866,9 +830,8 @@ Punti da confermare prima della produzione:
 - equivalenza semantica tra il codice CSV `UPW` e la categoria canonica `DIW — UHP Water`;
 - formato visibile del progressivo e namespace necessario per consentirne il reset senza collisioni;
 - fonte e procedura di aggiornamento iniziale delle giacenze;
-- provider di deploy, frequenza e autenticazione dello scheduler asincrono;
-- mittente Resend e domini verificati;
-- tempi di conservazione di audit, log, PDF e dati personali;
+- provider di deploy;
+- tempi di conservazione di audit, log e dati personali;
 - differenze grafiche definitive tra bozza, richiesta ufficiale e report finale.
 
 Codex può procedere sulle parti che non dipendono da questi punti. Deve chiedere conferma prima di fissare una scelta irreversibile o una migration di produzione collegata a essi.

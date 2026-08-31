@@ -1,20 +1,20 @@
 # Fabtek Materiali — Architettura tecnica
 
-> Stato: proposta implementativa basata sulla repository al 25/08/2026.  
+> Stato: proposta implementativa originaria, aggiornata per il flusso PDF on-demand al 31/08/2026.
 > Fonti: `products.md`, `rls.md`, `mock.html`, `mock pdf richiesta user.pdf` e codice corrente.  
 > Questo documento descrive come costruire il prodotto; `products.md` resta la fonte primaria per requisiti e regole di business.
 
 ## 1. Obiettivo architetturale
 
-Fabtek Materiali sarà un monolite modulare web basato su Next.js e Supabase. L'interfaccia, il backend applicativo e la generazione PDF vivono nella stessa applicazione Next.js; autenticazione, database relazionale, transazioni, RLS e storage sono gestiti da Supabase.
+Fabtek Materiali sarà un monolite modulare web basato su Next.js e Supabase. L'interfaccia, il backend applicativo e la generazione PDF vivono nella stessa applicazione Next.js; autenticazione, database relazionale, transazioni, RLS e storage dei datasheet sono gestiti da Supabase.
 
 Principi:
 
 - il browser non è mai una fonte autorevole per identità, ruolo, date, progressivi, disponibilità o stati;
-- Next.js orchestra i casi d'uso e integra PDF, email e gestione utenti;
+- Next.js orchestra i casi d'uso e integra PDF e gestione utenti;
 - PostgreSQL protegge invarianti, concorrenza e autorizzazioni sui dati;
 - le operazioni critiche sono atomiche e idempotenti;
-- PDF ed email ufficiali sono asincroni e ritentabili;
+- i PDF ufficiali sono generati in memoria al click e non vengono persistiti;
 - la RLS resta attiva anche quando l'accesso passa dal server Next.js;
 - la struttura iniziale rimane un monolite, senza microservizi non necessari.
 
@@ -29,7 +29,7 @@ Principi:
 | UI | Tailwind CSS `4.3.3`, shadcn/ui, Radix, Lucide, tema chiaro/scuro |
 | Auth | Starter Supabase SSR con client browser/server e refresh sessione in `proxy.ts` |
 | Flussi Auth | Login, signup, conferma OTP, recupero e cambio password |
-| Database locale | Supabase PostgreSQL 17 con migration zero, seed, RLS, RPC e bucket privati validati tramite `db reset` |
+| Database locale | Supabase PostgreSQL 17 con migration zero, seed, RLS, RPC e bucket privati validati tramite `db reset`; il bucket PDF è ora legacy |
 | Qualità | ESLint configurato; `npm run lint` passa sullo stato corrente |
 
 ### 2.2 Parti ancora mancanti
@@ -37,7 +37,7 @@ Principi:
 - Le pagine principali sono ancora quelle dimostrative dello starter Next.js/Supabase.
 - Lo schema dati esiste, ma non sono ancora implementati import CSV, DAL, schermate catalogo/inventario/richieste, dashboard o gestione utenti di dominio.
 - `rls.md` è stato recepito nella migration zero con i soli ruoli applicativi `user` e `admin`, profili attivi e privilegi espliciti.
-- I bucket Storage privati sono dichiarati; mancano template PDF, integrazione Resend e worker asincrono.
+- Il renderer PDF e gli endpoint ufficiali on-demand sono implementati; il bucket documentale legacy viene rimosso separatamente tramite Storage API.
 - Non esistono un Data Access Layer, servizi di dominio, validazione condivisa o client Supabase privilegiato server-only.
 - Non è presente una suite di test.
 - `.env.example` contiene solo le due variabili Supabase pubbliche.
@@ -66,7 +66,7 @@ flowchart LR
         DAL[Data Access Layer]
         DOM[Servizi di dominio]
         PDF[Renderer PDF Node.js]
-        JOB[Job runner]
+        DL[Risposta PDF in memoria]
     end
 
     N --> RSC
@@ -77,15 +77,12 @@ flowchart LR
     RH --> DOM
     DOM --> DAL
     DOM --> PDF
-    RH --> JOB
+    PDF --> DL
+    DL --> B
 
     DAL --> AUTH[Supabase Auth]
     DAL --> DB[Supabase Postgres + RLS + RPC]
-    PDF --> ST[Supabase Storage privato]
-    JOB --> DB
-    JOB --> ST
-    JOB --> RESEND[Resend]
-    SCH[Scheduler deploy] --> RH
+    DAL --> ST[Storage datasheet privato]
 ```
 
 ## 4. Responsabilità dei componenti
@@ -96,16 +93,16 @@ flowchart LR
 - esegue validazioni utili all'esperienza utente;
 - può produrre la distinta in bozza tramite una vista di stampa dedicata;
 - invia intenti e chiavi di idempotenza al server;
-- non accede mai a service role, chiavi Resend o tabelle interne.
+- non accede mai a service role o tabelle interne.
 
 ### Next.js
 
 - usa Server Components per letture iniziali;
 - usa Server Actions per mutazioni originate dai form dell'app;
-- usa Route Handler per callback Auth, download controllati, job interni e integrazioni HTTP;
+- usa Route Handler per callback Auth, download controllati e integrazioni HTTP;
 - valida payload, sessione, profilo attivo e autorizzazione per ogni operazione;
 - chiama funzioni RPC PostgreSQL per le transazioni critiche;
-- genera PDF ufficiali nel runtime Node.js;
+- genera al click i PDF ufficiali nel runtime Node.js e restituisce direttamente il `Buffer`;
 - usa la Supabase Admin API solo per la gestione utenti.
 
 I Route Handler e le Server Actions devono essere trattati come endpoint pubblici. `proxy.ts` serve al refresh della sessione e ai redirect ottimistici, non sostituisce i controlli nei casi d'uso.
@@ -116,26 +113,22 @@ I Route Handler e le Server Actions devono essere trattati come endpoint pubblic
 - applica RLS e privilegi SQL;
 - assegna progressivi e timestamp autorevoli;
 - esegue prenotazioni ed evasioni atomiche;
-- mantiene code persistenti, movimenti e audit;
+- mantiene movimenti e audit;
 - impedisce quantità negative, duplicati e riferimenti non validi.
 
 ### Supabase Storage
 
 - bucket privato `datasheets` per documenti tecnici;
-- bucket privato `generated-documents` per richiesta iniziale e report finale;
 - accesso tramite policy o signed URL di breve durata;
 - nessun URL pubblico permanente nei dati di dominio.
 
-### Worker asincrono
+### PDF ufficiali on-demand
 
-- acquisisce job con lock e lease temporale;
-- genera il PDF ufficiale dagli snapshot;
-- salva file e hash nello storage;
-- invia tramite Resend con idempotenza;
-- registra tentativi, message ID ed errori;
-- usa backoff e consente retry manuale Admin.
-
-Il worker resta nello stesso deploy Next.js per l'MVP. Uno scheduler esterno invoca un Route Handler interno autenticato tramite `JOB_RUNNER_SECRET`.
+- il dettaglio richiesta invoca `GET /api/requests/[requestId]/pdf/[kind]`;
+- il Route Handler verifica sessione, profilo, permesso e visibilità RLS;
+- la richiesta ufficiale usa gli snapshot delle righe; il report finale aggiunge tutte le evasioni e richiede stato `evasa`;
+- il renderer produce il documento in memoria e la stessa risposta HTTP lo restituisce come attachment non cacheabile;
+- nessun PDF ufficiale viene caricato in Storage, scritto su filesystem o inviato automaticamente via email.
 
 ## 5. Struttura target della repository
 
@@ -160,11 +153,10 @@ app/
       inventario/
       richieste/
       utenti/
-      job/
   api/
     auth/confirm/route.ts
-    documents/[documentId]/route.ts
-    internal/jobs/route.ts
+    documents/draft/route.ts
+    requests/[requestId]/pdf/[kind]/route.ts
 components/
   ui/
   layout/
@@ -187,10 +179,8 @@ lib/
     requests/
     inventory/
     fulfillment/
-    notifications/
   validation/
   pdf/
-  email/
   env.ts
 supabase/
   migrations/
@@ -207,7 +197,7 @@ Regole di dipendenza:
 - `components` non accede direttamente al database;
 - `data` contiene query e mapping, non regole di business;
 - `domain` orchestra casi d'uso e RPC;
-- `supabase/admin.ts`, `email` e il job runner importano `server-only`;
+- `supabase/admin.ts` e i moduli PDF/data server importano `server-only`;
 - nessun modulo server-only viene riesportato da entrypoint usati dai Client Components.
 
 ## 6. Routing applicativo
@@ -227,7 +217,6 @@ Regole di dipendenza:
 | Inventario Admin | `/admin/inventario` | Solo Admin |
 | Richieste Admin | `/admin/richieste` | Solo Admin |
 | Utenti Admin | `/admin/utenti` | Solo Admin |
-| Job falliti | `/admin/job` | Solo Admin |
 
 La UI può nascondere link non autorizzati, ma ogni pagina, Action, Handler, query e RPC verifica autonomamente l'accesso.
 
@@ -279,11 +268,11 @@ Adattamenti obbligatori:
 | `material_request_lines` | legge righe delle proprie richieste | legge tutte | no, solo RPC |
 | `fulfillment_events` | legge eventi delle proprie richieste | legge tutti | no, solo RPC Admin |
 | `inventory_movements` | nessun accesso diretto | legge | no, solo RPC |
-| `generated_documents` | legge metadati dei propri | legge tutti | no |
-| `notification_jobs` | nessuno | legge e richiede retry controllato | no |
 | `audit_events` | nessuno | sola lettura | no |
 
 Le policy permissive PostgreSQL si combinano con `OR`: i privilegi SQL di tabella/colonna e le policy devono quindi essere progettati insieme e testati con utenti reali distinti.
+
+Le tabelle metadata `generated_documents` e `notification_jobs` possono restare temporaneamente come residuo dello schema iniziale, ma non sono lette né elaborate dal flusso PDF on-demand. La loro rimozione richiede una revisione separata delle RPC.
 
 ## 8. Modello dati
 
@@ -297,9 +286,9 @@ Il modello completo è definito in `products.md`. Le migration saranno organizza
 6. inventario e movimenti, con `item_variants.track_inventory` come sorgente autorevole della modalità per le nuove richieste;
 7. richieste e snapshot righe, incluso `snapshot_track_inventory` immutabile;
 8. evasioni;
-9. documenti, notifiche e audit;
+9. audit;
 10. funzioni RPC e policy RLS;
-11. bucket e policy Storage;
+11. bucket e policy Storage dei datasheet;
 12. seed e import iniziale validato.
 
 Convenzioni:
@@ -325,7 +314,6 @@ sequenceDiagram
     participant B as Browser
     participant N as Next.js
     participant P as PostgreSQL RPC
-    participant J as Coda job
 
     B->>N: payload + client_request_id
     N->>N: valida sessione, profilo e schema
@@ -337,7 +325,6 @@ sequenceDiagram
     P->>P: assegna progressivo
     P->>P: crea richiesta e snapshot, inclusa modalità inventario
     P->>P: prenota quantità e crea movimenti solo per varianti tracciate
-    P->>J: accoda PDF/email iniziale
     P-->>N: commit + request_id
     N-->>B: richiesta confermata
 ```
@@ -354,40 +341,29 @@ La RPC `fulfill_request_line`:
 4. registra l'evasione;
 5. riduce prenotazione e giacenza solo per una riga tracciata nello snapshot;
 6. registra il movimento solo per una riga tracciata nello snapshot;
-7. se tutte le righe risultano evase, accoda una sola volta il report finale;
-8. restituisce quantità e stato ricalcolati.
+7. restituisce quantità e stato ricalcolati; il report finale diventa generabile al click quando lo stato è `EVASA`.
 
 ### 9.3 Eliminazione definitiva
 
-L'eliminazione di una richiesta è una RPC Admin separata. Verifica lo stato `EVASA`, registra prima un audit minimale, rimuove i record dipendenti secondo un ordine controllato e restituisce i path Storage da eliminare. La cancellazione dei file avviene dal server; un eventuale errore Storage viene tracciato e ritentato.
+L'eliminazione di una richiesta è una RPC Admin separata. Verifica lo stato `EVASA`, registra prima un audit minimale e rimuove i record dipendenti secondo un ordine controllato. Non esistono file PDF ufficiali da eliminare.
 
-## 10. PDF ed email
+## 10. PDF on-demand
 
 Esistono tre output distinti:
 
-| Output | Persistito | Prenota materiale | Email |
-|---|---:|---:|---:|
-| Distinta bozza | No | No | No |
-| Richiesta ufficiale | Sì, storage privato | È generata dopo la prenotazione | Sì |
-| Report finale | Sì, storage privato | No | Sì |
+| Output | Persistito | Disponibilità | Generazione |
+|---|---:|---|---|
+| Distinta bozza | No | Non prenota materiale | On-demand dal riepilogo |
+| Richiesta ufficiale | No | Disponibile dopo l'invio | On-demand dal dettaglio |
+| Report finale | No | Disponibile solo con stato `evasa` | On-demand dal dettaglio |
 
-La bozza segue `mock pdf richiesta user.pdf` e usa i dati correnti del carrello. I PDF ufficiali vengono generati solo dagli snapshot persistiti, con template e versione registrati. Il renderer deve supportare A4, righe multipagina, intestazioni ripetute, font incorporati e nessun artefatto automatico del browser.
-
-Il job runner segue questo stato:
-
-`PENDING → PROCESSING → COMPLETED`
-
-In caso di errore:
-
-`PROCESSING → PENDING` con backoff, oppure `FAILED` oltre il limite.
-
-Ogni richiesta ha al massimo un documento e una notifica per tipo grazie a vincoli univoci. Il retry non crea una nuova email logica.
+La bozza segue `mock pdf richiesta user.pdf` e usa i dati correnti del carrello. I PDF ufficiali vengono generati a ogni click solo dagli snapshot persistiti, con template condivisi. Il renderer deve supportare A4, righe multipagina, intestazioni ripetute, font incorporati e nessun artefatto automatico del browser. La risposta usa `application/pdf`, un filename canonico server-side e `Cache-Control: private, no-store`; i byte non vengono persistiti o inviati via email.
 
 ## 11. Strategia di caching e aggiornamento UI
 
 Con `cacheComponents: true`:
 
-- dati di sessione, profilo, richieste, disponibilità e job restano request-time e sono racchiusi in boundary `Suspense` quando richiesto da Next.js;
+- dati di sessione, profilo, richieste e disponibilità restano request-time e sono racchiusi in boundary `Suspense` quando richiesto da Next.js;
 - non si usa `use cache` attorno a query dipendenti da cookie o RLS utente;
 - la disponibilità non viene servita da una cache condivisa;
 - categorie e famiglie possono essere cache-ate solo tramite una funzione server che restituisce dati non sensibili, con tag espliciti e invalidazione dopo CRUD Admin;
@@ -406,14 +382,9 @@ Per l'MVP, gli aggiornamenti delle richieste sono garantiti al caricamento e dop
 ### Solo server
 
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `RESEND_API_KEY`
-- `EMAIL_FROM`
-- `REQUEST_EMAIL_RECIPIENTS`
-- `JOB_RUNNER_SECRET`
 - `APP_URL`
-- configurazione retry, se non mantenuta nel database
 
-Un modulo `lib/env.ts` valida presenza e formato all'avvio. I destinatari sono una lista separata da virgole, normalizzata e validata. Locale, staging e produzione usano progetti Supabase e chiavi distinti. `.env.local` non viene mai versionato e i valori non vengono scritti nei log.
+Un modulo `lib/env.ts` valida presenza e formato all'avvio. Locale, staging e produzione usano progetti Supabase e chiavi distinti. `.env.local` non viene mai versionato e i valori non vengono scritti nei log. La service role è riservata alla gestione utenti e alle operazioni amministrative esplicite, mai alla generazione PDF.
 
 ## 13. Errori, log e audit
 
@@ -421,16 +392,14 @@ Un modulo `lib/env.ts` valida presenza e formato all'avvio. I destinatari sono u
 - Gli errori di dominio usano codici stabili, per esempio `INSUFFICIENT_STOCK`, `FORBIDDEN`, `INVALID_QUANTITY`, `REQUEST_ALREADY_DELETED`.
 - Il client riceve messaggi in italiano senza stack trace o dettagli SQL.
 - I log tecnici contengono identificativi, durata e risultato, non payload sensibili completi.
-- Audit append-only per cambi ruolo/stato utente, CRUD catalogo, rettifiche inventario, evasioni, retry job, archiviazioni ed eliminazioni.
-- Errori PDF/Resend non causano rollback della richiesta già confermata.
+- Audit append-only per cambi ruolo/stato utente, CRUD catalogo, rettifiche inventario, evasioni, archiviazioni ed eliminazioni.
+- Un errore di rendering o download PDF non modifica la richiesta già confermata.
 
 ## 14. Strategia di test
 
 ### Unitari
 
 - calcolo stati e residui;
-- normalizzazione oggetto email;
-- parsing destinatari;
 - validazione quantità e payload;
 - mapping snapshot e template PDF.
 
@@ -442,8 +411,9 @@ Un modulo `lib/env.ts` valida presenza e formato all'avvio. I destinatari sono u
 - impossibilità di auto-promuovere il ruolo;
 - invii concorrenti sulla stessa giacenza;
 - evasioni concorrenti sulla stessa riga;
-- idempotenza di richiesta, evasione, documenti ed email;
-- accesso Storage a datasheet e PDF privati.
+- idempotenza di richiesta ed evasione;
+- accesso Storage ai datasheet privati;
+- autorizzazione, paginazione e assenza di accesso Storage nella generazione PDF on-demand.
 
 ### End-to-end
 
@@ -454,7 +424,7 @@ Un modulo `lib/env.ts` valida presenza e formato all'avvio. I destinatari sono u
 - evasione parziale e completa;
 - visibilità User/Admin;
 - gestione utenti e catalogo;
-- retry di un job fallito;
+- download autenticato della richiesta ufficiale e del report finale;
 - responsive tablet e smartphone.
 
 La pipeline minima esegue lint, typecheck, test unitari, test integrazione e build. I test PDF estraggono i contenuti attesi e renderizzano almeno una pagina singola e una multipagina per controllo visivo.
@@ -468,8 +438,8 @@ La pipeline minima esegue lint, typecheck, test unitari, test integrazione e bui
 - Il seed contiene le categorie canoniche e i dati di base stabili; `Caricamento Materiali.csv` viene acquisito da un import separato, validato e tracciato, che crea alias categoria, famiglie, componenti, varianti e associazioni.
 - Il CSV non contiene giacenze: inventario e soglie arrivano da una fonte separata e non vengono valorizzati con dati fittizi.
 - I dati del mock e del PDF mock non entrano nel seed di produzione.
-- Il deploy deve supportare runtime Node.js e un meccanismo scheduler autenticato.
-- Dominio mittente Resend, retention, backup e restore vengono verificati prima del go-live.
+- Il deploy deve supportare il runtime Node.js usato dal renderer PDF.
+- Retention, backup e restore dei dati autorevoli vengono verificati prima del go-live.
 
 Il provider di deploy non è ancora deciso. Questo documento non autorizza alcun deploy o modifica al progetto Supabase remoto.
 
@@ -504,12 +474,12 @@ Il provider di deploy non è ancora deciso. Questo documento non autorizza alcun
 - cronologia e movimenti;
 - viste User/Admin e dashboard operativa.
 
-### Fase 4 — Documenti e notifiche
+### Fase 4 — Documenti on-demand
 
-- bucket privati;
 - template PDF ufficiali;
-- coda, worker e Resend;
-- retry e pannello job.
+- Route Handler autorizzati per richiesta ufficiale e report finale;
+- rendering in memoria e download non cacheabile;
+- cleanup del bucket documentale legacy tramite Supabase Storage API.
 
 ### Fase 5 — Gestione e hardening
 
@@ -524,9 +494,8 @@ Prima della produzione devono essere confermati:
 
 - formato e namespace del progressivo;
 - fonte iniziale e processo di aggiornamento delle giacenze;
-- provider di deploy e scheduler;
-- dominio/mittente Resend;
-- retention di richieste, audit, job e documenti;
+- provider di deploy;
+- retention di richieste, audit e dati personali;
 - differenze grafiche finali tra bozza, richiesta ufficiale e report finale;
 - eventuale uso di Realtime nell'MVP.
 

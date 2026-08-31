@@ -114,13 +114,9 @@ Restano:
 - caricamento e mapping degli snapshot ufficiali, adattati al client di sessione;
 - metadata legacy nel database finché non verranno rimossi insieme a una revisione dedicata delle RPC.
 
-Una nuova migration:
+Una nuova migration elimina soltanto la policy Storage applicativa dedicata. Non modifica direttamente `storage.objects` o `storage.buckets`, perché la cancellazione SQL dei metadata non garantisce la rimozione dei blob fisici.
 
-1. elimina gli oggetti eventualmente presenti nel bucket `generated-documents`;
-2. elimina le policy Storage dedicate;
-3. rimuove il bucket `generated-documents`.
-
-La migration non viene applicata automaticamente al progetto remoto. L'eliminazione dei file legacy è intenzionale e irreversibile dopo l'applicazione; il contenuto resta comunque rigenerabile dai dati della richiesta.
+La pulizia del bucket `generated-documents` avviene invece con uno script one-off controllato e idempotente che usa la Supabase Storage API: prima `emptyBucket`, poi `deleteBucket`. Lo script richiede service role e un flag di conferma esplicito; non viene eseguito automaticamente, né durante la migration né durante deploy o test. L'eliminazione dei file legacy è intenzionale e irreversibile quando un operatore autorizzato esegue lo script; il contenuto resta comunque rigenerabile dai dati della richiesta.
 
 ## 7. Errori e sicurezza
 

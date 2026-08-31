@@ -12,6 +12,25 @@ type RequestPdfDownloadButtonProps = {
 };
 
 const DOWNLOAD_ERROR = "Non \u00e8 stato possibile generare il PDF. Riprova.";
+const FALLBACK_FILENAMES = {
+  initial_request: "fabtek-richiesta.pdf",
+  final_report: "fabtek-report-finale.pdf",
+} as const;
+const CANONICAL_FILENAME_PATTERNS = {
+  initial_request: /^fabtek-richiesta-[0-9]{6,}\.pdf$/u,
+  final_report: /^fabtek-report-finale-[0-9]{6,}\.pdf$/u,
+} as const;
+
+function getDownloadFilename(
+  contentDisposition: string | null,
+  kind: RequestPdfDownloadButtonProps["kind"],
+) {
+  const filename = contentDisposition
+    ?.match(/(?:^|;)\s*filename\s*=\s*"([^"]+)"/iu)?.[1];
+  return filename && CANONICAL_FILENAME_PATTERNS[kind].test(filename)
+    ? filename
+    : FALLBACK_FILENAMES[kind];
+}
 
 export function RequestPdfDownloadButton({
   requestId,
@@ -39,9 +58,10 @@ export function RequestPdfDownloadButton({
       objectUrl = URL.createObjectURL(await response.blob());
       const link = document.createElement("a");
       link.href = objectUrl;
-      link.download = kind === "initial_request"
-        ? "fabtek-richiesta.pdf"
-        : "fabtek-report-finale.pdf";
+      link.download = getDownloadFilename(
+        response.headers.get("content-disposition"),
+        kind,
+      );
       document.body.append(link);
       try {
         link.click();

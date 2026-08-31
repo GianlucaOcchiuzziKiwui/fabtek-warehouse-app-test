@@ -227,7 +227,7 @@ git commit -m "feat: add on-demand PDF actions"
 
 ---
 
-### Task 3: Decommission persisted PDF infrastructure and remove the Storage bucket
+### Task 3: Decommission persisted PDF infrastructure and prepare safe Storage cleanup
 
 **Files:**
 - Delete: `app/api/documents/[documentId]/route.ts`
@@ -243,6 +243,8 @@ git commit -m "feat: add on-demand PDF actions"
 - Modify: `tests/proxy-security.test.mjs`
 - Modify: `tests/document-routes.test.mjs`
 - Create: `tests/generated-pdf-storage-migration.test.mjs`
+- Create: `tests/generated-pdf-storage-cleanup-script.test.mjs`
+- Create: `scripts/remove-generated-documents-bucket.mjs`
 - Modify: `package.json`
 - Modify: `package-lock.json`
 - Create: `supabase/migrations/20260831120000_remove_generated_pdf_storage.sql`
@@ -252,11 +254,11 @@ git commit -m "feat: add on-demand PDF actions"
 
 **Interfaces:**
 - Consumes: Task 1 session-scoped source loader and Task 2 UI, neither of which depends on Storage or worker exports.
-- Produces: no scheduler/download-by-document route, no Resend dependency, and a migration that removes only generated PDF objects/policies/bucket while retaining metadata tables and request RPCs.
+- Produces: no scheduler/download-by-document route, no Resend dependency, a migration that drops only the legacy read policy, and a controlled Storage API script that empties and deletes only the generated-PDF bucket.
 
 - [ ] **Step 1: Add failing decommissioning and migration contract tests**
 
-Update tests to assert the normal Supabase proxy no longer bypasses `/api/internal/jobs`. Create `tests/generated-pdf-storage-migration.test.mjs`; load the migration as the executable SQL artifact and assert the literal destructive targets are limited to `storage.objects`, `storage_generated_documents_select_owner_or_admin`, and the `generated-documents` bucket. Assert the SQL contains no `drop table`, `drop function`, `truncate`, `generated_documents`, `notification_jobs`, `submit_material_request`, or `fulfill_request_line` target.
+Update tests to assert the normal Supabase proxy no longer bypasses `/api/internal/jobs`. Create `tests/generated-pdf-storage-migration.test.mjs`; load the migration as the executable SQL artifact and assert that it drops only `storage_generated_documents_select_owner_or_admin`, with no direct delete from `storage.objects` or `storage.buckets`. Assert the SQL contains no `drop table`, `drop function`, `truncate`, `generated_documents`, `notification_jobs`, `submit_material_request`, or `fulfill_request_line` target. Test the one-off script through an injected Storage API and verify `emptyBucket` precedes `deleteBucket`, missing buckets are idempotent, and other failures stop with a stable step.
 
 Add an application-boundary test that imports the remaining document data module and confirms on-demand generation can be loaded without `SUPABASE_SERVICE_ROLE_KEY`, `RESEND_API_KEY`, `REQUEST_EMAIL_RECIPIENTS`, `EMAIL_FROM`, or `JOB_RUNNER_SECRET`.
 
@@ -284,24 +286,22 @@ npm uninstall resend
 
 Do not change unrelated dependency versions.
 
-- [ ] **Step 5: Add the storage cleanup migration**
+- [ ] **Step 5: Add the policy migration and controlled Storage cleanup script**
 
-Create an idempotent SQL migration containing the scoped sequence:
+Create an idempotent SQL migration containing only:
 
 ```sql
-delete from storage.objects where bucket_id = 'generated-documents';
 drop policy if exists storage_generated_documents_select_owner_or_admin on storage.objects;
-delete from storage.buckets where id = 'generated-documents';
 ```
 
-Do not drop document metadata tables, RPCs, request snapshots, fulfillment events, or any other Storage bucket. Do not apply the migration remotely or locally when Docker is unavailable.
+Add `scripts/remove-generated-documents-bucket.mjs`, requiring an explicit confirmation flag and service-role credentials. It must call `emptyBucket('generated-documents')` and only then `deleteBucket('generated-documents')`, treating a missing bucket as success while surfacing other failures. Do not execute the script, apply the migration, or touch remote state during implementation. Do not drop document metadata tables, RPCs, request snapshots, fulfillment events, or any other Storage bucket.
 
 - [ ] **Step 6: Remove obsolete tests and run the focused replacement tests**
 
 Delete worker/job-state test files and remove old stored-document/scheduler cases from `tests/document-routes.test.mjs`, retaining draft and Task 1 on-demand cases. Run:
 
 ```powershell
-node --no-warnings --test tests/document-routes.test.mjs tests/proxy-security.test.mjs tests/generated-pdf-storage-migration.test.mjs tests/draft-pdf.test.mjs tests/pdf-renderer.test.mjs
+node --no-warnings --test tests/document-routes.test.mjs tests/proxy-security.test.mjs tests/generated-pdf-storage-migration.test.mjs tests/generated-pdf-storage-cleanup-script.test.mjs tests/draft-pdf.test.mjs tests/pdf-renderer.test.mjs
 npx tsc --noEmit
 ```
 
@@ -313,7 +313,7 @@ Run:
 
 ```powershell
 npm test
-npx eslint app/api/requests components/requests lib/data/documents.ts lib/domain/documents lib/supabase/proxy.ts tests/document-routes.test.mjs tests/proxy-security.test.mjs tests/generated-pdf-storage-migration.test.mjs
+npx eslint app/api/requests components/requests lib/data/documents.ts lib/domain/documents lib/supabase/proxy.ts scripts/remove-generated-documents-bucket.mjs tests/document-routes.test.mjs tests/proxy-security.test.mjs tests/generated-pdf-storage-migration.test.mjs tests/generated-pdf-storage-cleanup-script.test.mjs
 npx tsc --noEmit
 npm run build
 git diff --check
@@ -324,6 +324,6 @@ Expected: all tests pass, lint/typecheck/build exit `0`, the build lists the new
 - [ ] **Step 8: Commit the decommissioning task**
 
 ```powershell
-git add -A -- app/api/documents app/api/internal/jobs app/api/requests lib/data/documents.ts lib/domain/documents lib/env/documents.ts lib/email/resend.ts lib/supabase/proxy.ts tests package.json package-lock.json supabase/migrations/20260831120000_remove_generated_pdf_storage.sql
+git add -A -- app/api/documents app/api/internal/jobs app/api/requests lib/data/documents.ts lib/domain/documents lib/env/documents.ts lib/email/resend.ts lib/supabase/proxy.ts scripts/remove-generated-documents-bucket.mjs tests package.json package-lock.json supabase/migrations/20260831120000_remove_generated_pdf_storage.sql
 git commit -m "refactor: remove persisted PDF pipeline"
 ```

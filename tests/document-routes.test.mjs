@@ -291,7 +291,7 @@ test("request detail renders on-demand PDF actions from the explicit final-repor
   assert.match(completedHtml, /Genera report finale/u);
 });
 
-function loadRequestPdfButton() {
+function loadRequestPdfButton(kind = "initial_request") {
   const state = [];
   let stateIndex = 0;
   const TestButton = (props) => React.createElement("button", props);
@@ -316,8 +316,10 @@ function loadRequestPdfButton() {
     stateIndex = 0;
     return RequestPdfDownloadButton({
       requestId: REQUEST_ID,
-      kind: "initial_request",
-      label: "Genera PDF richiesta",
+      kind,
+      label: kind === "initial_request"
+        ? "Genera PDF richiesta"
+        : "Genera report finale",
     });
   }
 
@@ -385,14 +387,17 @@ test("request PDF download button downloads one PDF while busy and reports faile
 
     resolveResponse({
       ok: true,
-      headers: new Headers({ "content-type": "application/pdf" }),
+      headers: new Headers({
+        "content-type": "application/pdf",
+        "content-disposition": 'attachment; filename="fabtek-richiesta-000042.pdf"',
+      }),
       blob: async () => blob,
     });
     await firstDownload;
 
     assert.equal(anchors.length, 1);
     assert.equal(anchors[0].href, "blob:request-pdf");
-    assert.equal(anchors[0].download, "fabtek-richiesta.pdf");
+    assert.equal(anchors[0].download, "fabtek-richiesta-000042.pdf");
     assert.equal(anchors[0].clicked, true);
     assert.equal(anchors[0].removed, true);
     assert.equal(revokedObjectUrl, "blob:request-pdf");
@@ -410,5 +415,79 @@ test("request PDF download button downloads one PDF while busy and reports faile
     assert.match(errorHtml, /Non \u00e8 stato possibile generare il PDF/u);
   } finally {
     for (const restore of restoredGlobals.reverse()) restore();
+  }
+});
+
+test("request PDF download button uses the canonical final-report filename", async () => {
+  const blob = new Blob(["%PDF-on-demand"], { type: "application/pdf" });
+  const anchors = [];
+  const restoredGlobals = [
+    replaceGlobal("fetch", async (url) => {
+      assert.equal(url, `/api/requests/${REQUEST_ID}/pdf/final_report`);
+      return {
+        ok: true,
+        headers: new Headers({
+          "content-type": "application/pdf",
+          "content-disposition": 'attachment; filename="fabtek-report-finale-000042.pdf"',
+        }),
+        blob: async () => blob,
+      };
+    }),
+    replaceGlobal("URL", {
+      createObjectURL: () => "blob:final-report",
+      revokeObjectURL: () => {},
+    }),
+    replaceGlobal("document", {
+      body: { append(anchor) { anchors.push(anchor); } },
+      createElement() {
+        return { click() {}, remove() {} };
+      },
+    }),
+  ];
+
+  try {
+    await loadRequestPdfButton("final_report").button().props.onClick();
+    assert.equal(anchors[0].download, "fabtek-report-finale-000042.pdf");
+  } finally {
+    for (const restore of restoredGlobals.reverse()) restore();
+  }
+});
+
+test("request PDF download button rejects unsafe or non-PDF server filenames", async () => {
+  const unsafeFilenames = [
+    'attachment; filename="../fabtek-richiesta-000042.pdf"',
+    'attachment; filename="fabtek-richiesta-000042.exe"',
+    'attachment; filename=".pdf"',
+    null,
+  ];
+
+  for (const contentDisposition of unsafeFilenames) {
+    const anchors = [];
+    const headers = new Headers({ "content-type": "application/pdf" });
+    if (contentDisposition) headers.set("content-disposition", contentDisposition);
+    const restoredGlobals = [
+      replaceGlobal("fetch", async () => ({
+        ok: true,
+        headers,
+        blob: async () => new Blob(["%PDF-on-demand"], { type: "application/pdf" }),
+      })),
+      replaceGlobal("URL", {
+        createObjectURL: () => "blob:fallback",
+        revokeObjectURL: () => {},
+      }),
+      replaceGlobal("document", {
+        body: { append(anchor) { anchors.push(anchor); } },
+        createElement() {
+          return { click() {}, remove() {} };
+        },
+      }),
+    ];
+
+    try {
+      await loadRequestPdfButton().button().props.onClick();
+      assert.equal(anchors[0].download, "fabtek-richiesta.pdf");
+    } finally {
+      for (const restore of restoredGlobals.reverse()) restore();
+    }
   }
 });
