@@ -100,6 +100,58 @@ test("renders every document kind as a real PDF", async () => {
   }
 });
 
+test("renders the current request status as a header badge in every PDF kind", async () => {
+  const documents = [
+    {
+      document: { kind: "draft", ...common },
+      title: "Distinta richiesta materiale",
+      status: "Bozza",
+    },
+    {
+      document: {
+        kind: "initial_request",
+        requestNumber: 17,
+        statusLabel: "In preparazione",
+        ...common,
+      },
+      title: "Richiesta materiale #17",
+      status: "In preparazione",
+    },
+    {
+      document: {
+        kind: "final_report",
+        requestNumber: 17,
+        statusLabel: "Evasa",
+        ...common,
+        lines: [{
+          ...line,
+          fulfilledQuantity: 10,
+          remainingQuantity: 0,
+          fulfillments: [],
+        }],
+      },
+      title: "Report finale richiesta #17",
+      status: "Evasa",
+    },
+  ];
+
+  for (const { document, title, status } of documents) {
+    const [page] = await extractPdfPages(await renderPdfDocument(document));
+    const titleItem = page.items.find((item) => item.text.includes(title));
+    const statusItems = page.items.filter((item) => item.text === status);
+
+    assert.ok(titleItem, `${document.kind} title must be rendered`);
+    const headerStatusItems = statusItems.filter(
+      (item) => Math.abs(item.y - titleItem.y) < 4,
+    );
+    assert.equal(headerStatusItems.length, 1, `${document.kind} must render one status badge`);
+    assert.ok(
+      Math.abs(headerStatusItems[0].y - titleItem.y) < 4,
+      `${document.kind} status must stay aligned with the title`,
+    );
+  }
+});
+
 test("uses stable normalized filenames", () => {
   assert.equal(getPdfFilename({ kind: "draft", ...common }), "fabtek-distinta-bozza.pdf");
   assert.equal(getPdfFilename({ kind: "initial_request", requestNumber: 17, statusLabel: "In preparazione", ...common }), "fabtek-richiesta-000017.pdf");
