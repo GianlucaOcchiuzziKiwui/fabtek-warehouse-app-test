@@ -32,6 +32,7 @@ type FulfillmentDependencies = {
 export type FulfillmentResult = {
   requestId: string;
   requestLineId: string;
+  idempotencyKey: string;
   fulfilledQuantity: number;
   remainingQuantity: number;
   lineStatus: "in_preparazione" | "evasa_parziale" | "evasa";
@@ -53,6 +54,7 @@ function isRequestStatus(value: unknown): value is FulfillmentResult["lineStatus
 function readRpcResult(
   data: unknown,
   expectedRequestLineId: string,
+  idempotencyKey: string,
 ): FulfillmentResult | null {
   if (!Array.isArray(data) || data.length !== 1 || !isRecord(data[0])) return null;
 
@@ -81,6 +83,7 @@ function readRpcResult(
   return {
     requestId,
     requestLineId,
+    idempotencyKey,
     fulfilledQuantity,
     remainingQuantity,
     lineStatus,
@@ -134,7 +137,11 @@ export async function fulfillRequestLine(
       return { ok: false, error: toActionError(response.error) };
     }
 
-    const result = readRpcResult(response.data, data.requestLineId);
+    const result = readRpcResult(
+      response.data,
+      data.requestLineId,
+      data.idempotencyKey,
+    );
     return result
       ? { ok: true, data: result }
       : { ok: false, error: toActionError(null) };

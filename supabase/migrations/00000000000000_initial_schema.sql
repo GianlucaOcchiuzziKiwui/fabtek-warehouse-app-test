@@ -431,6 +431,10 @@ create table public.material_requests (
   request_number bigint generated always as identity unique,
   client_request_id uuid not null,
   requester_id uuid not null references public.profiles(id) on delete restrict,
+  requester_email text check (
+    requester_email is null
+    or requester_email = lower(btrim(requester_email))
+  ),
   requested_at timestamptz not null default now(),
   project text not null check (length(btrim(project)) between 1 and 120),
   tool_line text not null check (length(btrim(tool_line)) between 1 and 120),
@@ -451,6 +455,29 @@ create table public.material_requests (
 
 create index material_requests_requester_date_idx on public.material_requests (requester_id, requested_at desc);
 create index material_requests_status_date_idx on public.material_requests (status, requested_at desc);
+
+create or replace function public.set_material_request_requester_email()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  select lower(btrim(auth_user.email))
+  into new.requester_email
+  from auth.users auth_user
+  where auth_user.id = new.requester_id
+    and nullif(btrim(auth_user.email), '') is not null;
+
+  return new;
+end;
+$$;
+
+revoke all on function public.set_material_request_requester_email() from public;
+
+create trigger material_requests_set_requester_email
+before insert on public.material_requests
+for each row execute function public.set_material_request_requester_email();
 
 create table public.material_request_lines (
   id uuid primary key default gen_random_uuid(),

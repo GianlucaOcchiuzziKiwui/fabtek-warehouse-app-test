@@ -43,6 +43,7 @@ test("calls only the fulfillment RPC with the caller's stable idempotency key", 
     data: {
       requestId: REQUEST_ID,
       requestLineId: REQUEST_LINE_ID,
+      idempotencyKey: IDEMPOTENCY_KEY,
       fulfilledQuantity: 4,
       remainingQuantity: 6,
       lineStatus: "evasa_parziale",
