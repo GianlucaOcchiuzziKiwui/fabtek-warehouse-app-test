@@ -84,7 +84,7 @@ Non vengono cancellate cache generiche: in futuro le cache PWA avranno nomi vers
 - `X-Content-Type-Options: nosniff`;
 - CSP limitata al worker con sorgenti `self`.
 
-Il matcher del proxy continua a non applicarsi agli asset PNG. Verrà escluso esplicitamente anche `sw.js` per evitare accessi a Supabase e redirect di autenticazione durante registrazione e aggiornamento del worker.
+Il matcher del proxy continua a non applicarsi agli asset PNG. Verranno esclusi esplicitamente anche `sw.js` e `manifest.webmanifest` per evitare accessi a Supabase e redirect di autenticazione durante registrazione, aggiornamento e verifica dell'installabilità.
 
 ### Registrazione e pulsante d'installazione
 
@@ -136,7 +136,7 @@ L'implementazione segue TDD e aggiunge test che dimostrano:
 
 - contenuto e completezza del manifest, incluse icone normali e maskable;
 - presenza dei file icona con dimensioni corrette;
-- header esatti di `/sw.js` e sua esclusione dal proxy autenticato;
+- header esatti di `/sw.js` ed esclusione dal proxy autenticato sia del worker sia del manifest;
 - assenza di listener `fetch`, Cache API e precache nel worker online-only;
 - registrazione con scope `/` e `updateViaCache: "none"`;
 - pulsante nascosto senza evento installabile o in modalità standalone;
