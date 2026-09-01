@@ -83,7 +83,7 @@ function withEmailEnvironment(run) {
   const previous = new Map(names.map((name) => [name, process.env[name]]));
   process.env.RESEND_API_KEY = "re_test_key";
   process.env.RESEND_FROM_EMAIL = "Fabtek Warehouse <warehouse@fabtek.example>";
-  process.env.WAREHOUSE_EMAILS = "store@fabtek.example,buyer@fabtek.example";
+  process.env.WAREHOUSE_EMAILS = "mario@example.com, buyer@fabtek.example";
   return Promise.resolve(run()).finally(() => {
     for (const [name, value] of previous) {
       if (value === undefined) delete process.env[name];
@@ -157,7 +157,7 @@ test("a partial fulfillment emails its authoritative data with the current reque
     assert.equal(sends.length, 1);
     const [{ message, options }] = sends;
     assert.deepEqual(message.to, ["mario@example.com"]);
-    assert.deepEqual(message.bcc, ["store@fabtek.example", "buyer@fabtek.example"]);
+    assert.deepEqual(message.bcc, ["mario@example.com", "buyer@fabtek.example"]);
     assert.equal(message.subject, "Richiesta materiale #42 aggiornata");
     assert.match(message.html, /FT-001/u);
     assert.match(message.text, /Quantità consegnata: 4 m/u);

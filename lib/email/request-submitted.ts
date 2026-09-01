@@ -423,9 +423,7 @@ export async function sendRequestSubmittedEmail({
 
     await sendEmail({
       to: [normalizedRequesterEmail],
-      bcc: warehouseEmails.filter(
-        (email) => email !== normalizedRequesterEmail,
-      ),
+      bcc: warehouseEmails,
       subject: template.subject,
       html: template.html,
       text: template.text,

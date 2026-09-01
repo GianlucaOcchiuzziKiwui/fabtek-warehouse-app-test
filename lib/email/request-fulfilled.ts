@@ -110,7 +110,7 @@ export async function sendRequestFulfilledEmail(
     const { warehouseEmails } = getEmailSettings();
     await sendEmail({
       to: [requesterEmail],
-      bcc: warehouseEmails.filter((email) => email !== requesterEmail),
+      bcc: warehouseEmails,
       subject: template.subject,
       html: template.html,
       text: template.text,
