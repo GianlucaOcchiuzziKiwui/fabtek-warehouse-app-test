@@ -1,6 +1,9 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { IBM_Plex_Sans, Oswald } from "next/font/google";
 import { ThemeProvider } from "next-themes";
+
+import { InstallAppButton } from "@/components/pwa/install-app-button";
+
 import "./globals.css";
 
 const headingFont = Oswald({
@@ -28,6 +31,21 @@ export const metadata: Metadata = {
     template: "%s | Fabtek Materiali",
   },
   description: "Gestione delle richieste materiali Fabtek.",
+  icons: {
+    apple: "/icons/apple-touch-icon.png",
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Fabtek Materiali",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#0b2545" },
+    { media: "(prefers-color-scheme: dark)", color: "#061527" },
+  ],
 };
 
 export default function RootLayout({
@@ -50,6 +68,7 @@ export default function RootLayout({
         >
           {children}
         </ThemeProvider>
+        <InstallAppButton />
       </body>
     </html>
   );
