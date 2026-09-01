@@ -1,4 +1,5 @@
 import { Brand } from "@/components/brand";
+import { BrandLogo } from "@/components/brand-logo";
 import { ProfileProvider } from "@/components/auth/profile-context";
 import { AppNavigation } from "@/components/layout/app-navigation";
 import { LogoutButton } from "@/components/logout-button";
@@ -85,8 +86,10 @@ function AppShell({
 
       <Toaster position="top-center" duration={8_000} />
 
-      <footer data-print-shell="chrome" className="border-t border-border px-4 py-5 text-center text-xs text-muted-foreground sm:px-6">
-        Fabtek  | Warehouse Management | v.{process.env.NEXT_PUBLIC_APP_VERSION}
+      <footer data-print-shell="chrome" className="flex flex-wrap items-center justify-center gap-2 border-t border-border px-4 py-5 text-center text-xs text-muted-foreground sm:px-6">
+        <BrandLogo className="h-auto w-20" />
+        <span aria-hidden="true">|</span>
+        <span>Warehouse Management | v.{process.env.NEXT_PUBLIC_APP_VERSION}</span>
       </footer>
     </div>
   );

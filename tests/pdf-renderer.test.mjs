@@ -78,6 +78,21 @@ async function extractFirstPageFillColors(buffer) {
   return colors;
 }
 
+async function countFirstPageImages(buffer) {
+  const loadingTask = getDocument({
+    data: new Uint8Array(buffer),
+    useSystemFonts: true,
+  });
+  const pdf = await loadingTask.promise;
+  const page = await pdf.getPage(1);
+  const operators = await page.getOperatorList();
+  const imageCount = operators.fnArray.filter(
+    (operator) => operator === OPS.paintImageXObject || operator === OPS.paintInlineImageXObject,
+  ).length;
+  await loadingTask.destroy();
+  return imageCount;
+}
+
 const line = {
   fabtekCode: "FT-001",
   oracleSapioCode: "OR-900",
@@ -125,6 +140,14 @@ test("renders every document kind as a real PDF", async () => {
     assert.equal(buffer.subarray(0, 5).toString("ascii"), "%PDF-");
     assert.ok(buffer.length > 1_000);
   }
+});
+
+test("renders the supplied logo in the PDF header and footer instead of wordmarks", async () => {
+  const buffer = await renderPdfDocument({ kind: "draft", ...common });
+  const text = await extractPdfText(buffer);
+
+  assert.ok(await countFirstPageImages(buffer) >= 2);
+  assert.doesNotMatch(text, /Fabtek/iu);
 });
 
 test("renders the current request status as a header badge in every PDF kind", async () => {
@@ -319,7 +342,7 @@ test("keeps initial request rows complete and final rows with their histories on
   assert.match(initialRowPage.text, /OR-909/);
   assert.match(initialRowPage.text, /19 m/);
   const footerTop = Math.min(...initialRowPage.items
-    .filter((item) => item.text.includes("Fabtek"))
+    .filter((item) => item.text.includes("Warehouse Management"))
     .map((item) => item.y));
   for (const rowText of ["FT-009", "serie 009", "OR-909", "19 m"]) {
     const item = initialRowPage.items.find((candidate) => candidate.text.includes(rowText));

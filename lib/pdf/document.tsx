@@ -1,4 +1,6 @@
-import { Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { Image, Document, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 import type { PdfDocument, PdfLine, PdfStatusTone } from "./contracts.ts";
 
@@ -7,10 +9,15 @@ const colors = {
   lightGray: "#f2f2f2",
 };
 
+const logoSource = {
+  data: readFileSync(resolve(process.cwd(), "public", "logo.png")),
+  format: "png" as const,
+};
+
 const styles = StyleSheet.create({
   page: { paddingTop: 42, paddingHorizontal: 34, paddingBottom: 48, fontFamily: "IBM Plex Sans", fontSize: 8, color: colors.navy },
   header: { borderBottomWidth: 2, borderBottomColor: colors.navy, paddingBottom: 10, marginBottom: 14 },
-  brand: { fontSize: 18, fontWeight: 600, color: colors.navy },
+  headerLogo: { width: 130, height: 40 },
   titleRow: { marginTop: 4, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   title: { fontSize: 12, fontWeight: 600, color: colors.navy },
   statusBadge: { marginLeft: 8, paddingVertical: 3, paddingHorizontal: 7, borderRadius: 3, fontSize: 7, fontWeight: 600 },
@@ -39,6 +46,9 @@ const styles = StyleSheet.create({
   history: { padding: 4, paddingLeft: 8, backgroundColor: colors.lightGray, borderTopWidth: 1, borderTopColor: colors.lightGray },
   warning: { borderWidth: 1, borderColor: colors.navy, padding: 7, color: colors.navy, marginTop: 2 },
   footer: { position: "absolute", left: 34, right: 34, bottom: 20, flexDirection: "row", justifyContent: "space-between", color: colors.navy, fontSize: 7 },
+  footerBrand: { flexDirection: "row", alignItems: "center" },
+  footerLogo: { width: 42, height: 13 },
+  footerText: { marginLeft: 4 },
 });
 
 function statusBadgeStyle(tone: PdfStatusTone) {
@@ -54,7 +64,8 @@ function statusBadgeStyle(tone: PdfStatusTone) {
 
 function PdfHeader({ title, status, statusTone }: { title: string; status: string; statusTone: PdfStatusTone }) {
   return <View style={styles.header}>
-    <Text style={styles.brand}>FABTEK</Text>
+    {/* eslint-disable-next-line jsx-a11y/alt-text -- React PDF Image does not support HTML alt text. */}
+    <Image src={logoSource} style={styles.headerLogo} />
     <View style={styles.titleRow}>
       <Text style={styles.title}>{title}</Text>
       <Text style={[styles.statusBadge, statusBadgeStyle(statusTone)]}>{status}</Text>
@@ -138,7 +149,14 @@ function DraftWarning() {
 }
 
 function PdfFooter() {
-  return <View style={styles.footer} fixed><Text>Fabtek  | Warehouse Management | v.{process.env.NEXT_PUBLIC_APP_VERSION} | {new Date().toLocaleDateString("it-IT")}</Text><Text render={({ pageNumber, totalPages }) => `Pagina ${pageNumber} di ${totalPages}`} /></View>;
+  return <View style={styles.footer} fixed>
+    <View style={styles.footerBrand}>
+      {/* eslint-disable-next-line jsx-a11y/alt-text -- React PDF Image does not support HTML alt text. */}
+      <Image src={logoSource} style={styles.footerLogo} />
+      <Text style={styles.footerText}>| Warehouse Management | v.{process.env.NEXT_PUBLIC_APP_VERSION} | {new Date().toLocaleDateString("it-IT")}</Text>
+    </View>
+    <Text render={({ pageNumber, totalPages }) => `Pagina ${pageNumber} di ${totalPages}`} />
+  </View>;
 }
 
 export function FabtekPdf({ document }: { document: PdfDocument }) {

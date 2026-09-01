@@ -1,8 +1,10 @@
+import type { ReactNode } from "react";
+
 export function PageHeading({
   title,
   description,
 }: {
-  title: string;
+  title: ReactNode;
   description?: string;
 }) {
   return (

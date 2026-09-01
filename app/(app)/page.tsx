@@ -1,4 +1,5 @@
 import { HomeActions } from "@/components/home/home-actions";
+import { BrandLogo } from "@/components/brand-logo";
 import { PageHeading } from "@/components/shared/page-heading";
 import { requireCurrentProfile } from "@/lib/auth/current-profile";
 import { isAdmin } from "@/lib/auth/permissions";
@@ -14,7 +15,12 @@ export default function HomePage() {
   return (
     <div className="space-y-8">
       <PageHeading
-        title="Materiali Fabtek"
+        title={(
+          <span className="flex flex-wrap items-center gap-3">
+            <span>Materiali</span>
+            <BrandLogo className="h-auto w-48 sm:w-60" />
+          </span>
+        )}
         description="Scegli l'operazione da eseguire."
       />
       <Suspense
