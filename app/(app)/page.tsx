@@ -1,6 +1,4 @@
 import { HomeActions } from "@/components/home/home-actions";
-import { BrandLogo } from "@/components/brand-logo";
-import { PageHeading } from "@/components/shared/page-heading";
 import { requireCurrentProfile } from "@/lib/auth/current-profile";
 import { isAdmin } from "@/lib/auth/permissions";
 import { Suspense } from "react";
@@ -13,16 +11,8 @@ async function HomeActionsForCurrentProfile() {
 
 export default function HomePage() {
   return (
-    <div className="space-y-8">
-      <PageHeading
-        title={(
-          <span className="flex flex-wrap items-center gap-3">
-            <span>Materiali</span>
-            <BrandLogo className="h-auto w-48 sm:w-60" />
-          </span>
-        )}
-        description="Scegli l'operazione da eseguire."
-      />
+    <div>
+      <h1 className="sr-only">Azioni principali</h1>
       <Suspense
         fallback={(
           <div
