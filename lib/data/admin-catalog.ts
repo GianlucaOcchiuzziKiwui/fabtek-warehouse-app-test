@@ -61,6 +61,7 @@ const VARIANT_SELECT = `
   component_id,
   fabtek_code,
   oracle_sapio_code,
+  datasheet_url,
   description,
   diameter,
   material,
@@ -190,6 +191,7 @@ export type AdminVariantRow = AdminCatalogBaseRow & {
   componentId: string;
   fabtekCode: string;
   oracleSapioCode: string | null;
+  datasheetUrl: string | null;
   description: string;
   diameter: string | null;
   material: string;
@@ -409,6 +411,7 @@ function mapVariant(value: unknown): AdminVariantRow | null {
         componentId,
         fabtekCode,
         oracleSapioCode: text(value.oracle_sapio_code),
+        datasheetUrl: text(value.datasheet_url),
         description,
         diameter: text(value.diameter),
         material,
@@ -679,6 +682,20 @@ export async function getAdminCatalogPage(
   };
 }
 
+export async function getAdminComponentVariants(
+  componentId: string,
+  dependencies: Partial<AdminCatalogDependencies> = {},
+): Promise<AdminVariantRow[]> {
+  if (!UUID_PATTERN.test(componentId)) throw new AdminCatalogDataError();
+  const createClient = dependencies.createClient ?? defaultCreateClient;
+  const client = await createClient();
+  const response = await applyCatalogVariantOrdering(
+    client.from("item_variants").select(VARIANT_SELECT).eq("component_id", componentId),
+  );
+  if (response.error || !Array.isArray(response.data)) throw new AdminCatalogDataError();
+  return mapRows("varianti", response.data) as AdminVariantRow[];
+}
+
 async function loadOptions(
   loadPage: (from: number, to: number) => PromiseLike<QueryResponse>,
   mapper: (value: unknown) => AdminRelationOption | AdminCategoryOption | AdminComponentOption | AdminUnitOption | null,
@@ -718,17 +735,29 @@ export async function getAdminCatalogFormOptions(
   const client = await createClient();
 
   if (tab === "componenti") {
-    result.families = await loadOptions(
-      (from, to) => client
-        .from("families")
-        .select("id, name, is_active")
-        .order("sort_order")
-        .order("name")
-        .order("id")
-        .range(from, to),
-      relationOption,
-    ) as AdminRelationOption[];
-    return result;
+    const [categories, families, unitsOfMeasure] = await Promise.all([
+      loadOptions(
+        (from, to) => client.from("categories").select("id, code, name, is_active")
+          .order("sort_order").order("name").order("id").range(from, to),
+        categoryOption,
+      ),
+      loadOptions(
+        (from, to) => client.from("families").select("id, name, is_active")
+          .order("sort_order").order("name").order("id").range(from, to),
+        relationOption,
+      ),
+      loadOptions(
+        (from, to) => client.from("units_of_measure").select("id, code, name, is_active")
+          .order("name").order("id").range(from, to),
+        unitOption,
+      ),
+    ]);
+    return {
+      categories: categories as AdminCategoryOption[],
+      families: families as AdminRelationOption[],
+      components: [],
+      unitsOfMeasure: unitsOfMeasure as AdminUnitOption[],
+    };
   }
 
   const [categories, families, components, unitsOfMeasure] = await Promise.all([
@@ -871,6 +900,7 @@ export async function saveVariant(
       p_component_id: input.componentId,
       p_fabtek_code: input.fabtekCode,
       p_oracle_sapio_code: input.oracleSapioCode,
+      p_datasheet_url: input.datasheetUrl,
       p_description: input.description,
       p_diameter: input.diameter,
       p_material: input.material,

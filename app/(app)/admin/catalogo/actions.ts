@@ -3,6 +3,7 @@
 import { requirePermission } from "@/lib/auth/current-profile";
 import {
   deleteCatalogEntity,
+  getAdminComponentVariants,
   saveCategory,
   saveComponent,
   saveFamily,
@@ -10,6 +11,7 @@ import {
   saveVariant,
   setCatalogEntityActive,
 } from "@/lib/data/admin-catalog";
+import type { AdminVariantRow } from "@/lib/data/admin-catalog";
 import type { ActionResult } from "@/lib/domain/action-result";
 import type {
   AdminCatalogTab,
@@ -150,6 +152,13 @@ export async function saveVariantAction(
     if (result) return result;
     throw error;
   }
+}
+
+export async function getComponentVariantsAction(
+  componentId: string,
+): Promise<AdminVariantRow[]> {
+  await requirePermission("catalog:manage");
+  return getAdminComponentVariants(componentId);
 }
 
 export async function setCatalogEntityActiveAction(

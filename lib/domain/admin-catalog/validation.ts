@@ -73,6 +73,21 @@ function optionalText(value: unknown): string | null {
   return value.trim() || null;
 }
 
+function optionalHttpUrl(value: unknown): string | null {
+  const normalized = optionalText(value);
+  if (normalized === null) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(normalized);
+  } catch {
+    invalid();
+  }
+  if ((parsed.protocol !== "http:" && parsed.protocol !== "https:") || !parsed.hostname) {
+    invalid();
+  }
+  return normalized;
+}
+
 function uuid(value: unknown): string {
   const normalized = requiredText(value);
   if (!UUID_PATTERN.test(normalized)) invalid();
@@ -202,6 +217,7 @@ export function parseVariantInput(value: unknown): VariantInput {
     componentId: uuid(input.componentId),
     fabtekCode: requiredText(input.fabtekCode),
     oracleSapioCode: optionalText(input.oracleSapioCode),
+    datasheetUrl: optionalHttpUrl(input.datasheetUrl),
     description: requiredText(input.description),
     diameter: optionalText(input.diameter),
     material: requiredText(input.material),

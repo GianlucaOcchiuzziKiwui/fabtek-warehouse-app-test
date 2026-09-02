@@ -349,6 +349,36 @@ test("component form offers a discreet inline family creator without nesting for
   assert.equal((markup.match(/<form\b/gu) ?? []).length, 1);
 });
 
+test("component edit form exposes management controls for its linked variants", () => {
+  const { CatalogEntityForm } = loadProjectModule(
+    "components/admin/catalog/catalog-entity-dialog.tsx",
+    DIALOG_OVERRIDES,
+  );
+  const markup = renderToStaticMarkup(React.createElement(CatalogEntityForm, {
+    entityType: "componenti",
+    entity: {
+      kind: "componente",
+      id: COMPONENT_ID,
+      familyId: FAMILY_ID,
+      name: "Tubo",
+      description: null,
+      iconKey: "component",
+      sortOrder: 0,
+      isActive: true,
+      family: { id: FAMILY_ID, name: "Tubazioni", isActive: true },
+    },
+    families: [],
+    pending: false,
+    error: null,
+    variantSection: React.createElement("section", null, "Varianti collegate Aggiungi variante"),
+    onSubmit() {},
+    onCancel() {},
+  }));
+
+  assert.match(markup, /Varianti collegate/u);
+  assert.match(markup, /Aggiungi variante/u);
+});
+
 test("entity form announces errors, disables submission while pending and keeps cancel focusable", () => {
   const { CatalogEntityForm } = loadProjectModule(
     "components/admin/catalog/catalog-entity-dialog.tsx",
@@ -433,6 +463,8 @@ test("variant form exposes every editable field and visibly selected categories"
   assert.match(markup, /<label[^>]*for="catalog-variant-component"[^>]*>Componente/u);
   assert.match(markup, /<label[^>]*for="catalog-variant-fabtek-code"[^>]*>Codice Fabtek/u);
   assert.match(markup, /<label[^>]*for="catalog-variant-oracle-code"[^>]*>Codice Oracle\/SAPIO/u);
+  assert.match(markup, /<input[^>]*id="catalog-variant-datasheet-url"/u);
+  assert.match(markup, /<input[^>]*type="url"[^>]*id="catalog-variant-datasheet-url"/u);
   assert.match(markup, /<label[^>]*for="catalog-variant-description"[^>]*>Descrizione/u);
   assert.match(markup, /<label[^>]*for="catalog-variant-diameter"[^>]*>Diametro/u);
   assert.match(markup, /<label[^>]*for="catalog-variant-material"[^>]*>Materiale/u);

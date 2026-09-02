@@ -52,6 +52,7 @@ type CatalogVariantFormProps = {
   quickCreateUnit?: ReactNode;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onCancel: () => void;
+  componentLocked?: boolean;
 };
 
 function relationLabel(
@@ -87,6 +88,7 @@ export function CatalogVariantForm({
   quickCreateUnit,
   onSubmit,
   onCancel,
+  componentLocked = false,
 }: CatalogVariantFormProps) {
   const errorId = error ? "catalog-variant-error" : undefined;
   const selectedCategories = options.categories.filter((category) => (
@@ -109,11 +111,11 @@ export function CatalogVariantForm({
         <div className="space-y-2 sm:col-span-2">
           <div className="flex items-center justify-between gap-3">
             <Label htmlFor="catalog-variant-component">Componente</Label>
-            {quickCreateComponent ?? (
+            {!componentLocked && (quickCreateComponent ?? (
               <Button type="button" variant="ghost" size="sm" disabled={pending} onClick={onQuickCreateComponent}>
                 Nuovo componente
               </Button>
-            )}
+            ))}
           </div>
           <select
             id="catalog-variant-component"
@@ -121,7 +123,7 @@ export function CatalogVariantForm({
             value={componentId ?? entity?.componentId ?? ""}
             onChange={(event) => onComponentChange?.(event.target.value)}
             required
-            disabled={pending}
+            disabled={pending || componentLocked}
             aria-describedby={errorId}
             className="h-10 w-full rounded-lg border border-input bg-background px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/25 disabled:cursor-not-allowed disabled:opacity-50"
           >
@@ -156,6 +158,21 @@ export function CatalogVariantForm({
             name="oracleSapioCode"
             defaultValue={entity?.oracleSapioCode ?? ""}
             disabled={pending}
+            aria-describedby={errorId}
+          />
+        </div>
+
+        <div className="space-y-2 sm:col-span-2">
+          <Label htmlFor="catalog-variant-datasheet-url">URL datasheet</Label>
+          <Input
+            id="catalog-variant-datasheet-url"
+            name="datasheetUrl"
+            type="url"
+            inputMode="url"
+            pattern="https?://.*"
+            placeholder="https://example.com/datasheet.pdf"
+            defaultValue={entity?.datasheetUrl ?? ""}
+            disabled={pending || componentLocked}
             aria-describedby={errorId}
           />
         </div>
@@ -369,6 +386,8 @@ type CatalogVariantDialogProps = {
   saveFamily?: (input: unknown) => Promise<ActionResult<CatalogMutationResult>>;
   saveComponent?: (input: unknown) => Promise<ActionResult<CatalogMutationResult>>;
   saveUnit?: (input: unknown) => Promise<ActionResult<CatalogMutationResult>>;
+  fixedComponentId?: string;
+  onSaved?: () => void | Promise<void>;
 };
 
 export function CatalogVariantDialog({
@@ -382,6 +401,8 @@ export function CatalogVariantDialog({
   saveFamily,
   saveComponent,
   saveUnit,
+  fixedComponentId,
+  onSaved,
 }: CatalogVariantDialogProps) {
   const [categoryIds, setCategoryIds] = useState(() => (
     entity?.categories.map((category) => category.id) ?? []
@@ -389,7 +410,7 @@ export function CatalogVariantDialog({
   const [isActive, setIsActive] = useState(entity?.isActive ?? true);
   const [trackInventory, setTrackInventory] = useState(entity?.trackInventory ?? false);
   const [formOptions, setFormOptions] = useState(options);
-  const [componentId, setComponentId] = useState(entity?.componentId ?? "");
+  const [componentId, setComponentId] = useState(fixedComponentId ?? entity?.componentId ?? "");
   const [unitOfMeasureId, setUnitOfMeasureId] = useState(entity?.unitOfMeasureId ?? "");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -399,10 +420,10 @@ export function CatalogVariantDialog({
     setIsActive(entity?.isActive ?? true);
     setTrackInventory(entity?.trackInventory ?? false);
     setFormOptions(options);
-    setComponentId(entity?.componentId ?? "");
+    setComponentId(fixedComponentId ?? entity?.componentId ?? "");
     setUnitOfMeasureId(entity?.unitOfMeasureId ?? "");
     setError(null);
-  }, [entity, open, options]);
+  }, [entity, fixedComponentId, open, options]);
 
   function close() {
     if (!pending && !blocked) onOpenChange(false);
@@ -427,6 +448,7 @@ export function CatalogVariantDialog({
           componentId,
           fabtekCode: formData.get("fabtekCode"),
           oracleSapioCode: formData.get("oracleSapioCode"),
+          datasheetUrl: formData.get("datasheetUrl"),
           description: formData.get("description"),
           diameter: formData.get("diameter"),
           material: formData.get("material"),
@@ -443,6 +465,7 @@ export function CatalogVariantDialog({
           return;
         }
         toast.success("Variante salvata.");
+        await onSaved?.();
         onOpenChange(false);
       } catch {
         setError("Non è stato possibile salvare la variante. Riprova.");
@@ -520,6 +543,7 @@ export function CatalogVariantDialog({
           ) : undefined}
           onSubmit={submit}
           onCancel={close}
+          componentLocked={Boolean(fixedComponentId)}
         />
       </DialogContent>
     </Dialog>

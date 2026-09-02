@@ -5,6 +5,7 @@ import {
   CatalogQuickCreate,
   type QuickCreatedOption,
 } from "@/components/admin/catalog/catalog-quick-create";
+import { CatalogVariantDialog } from "@/components/admin/catalog/catalog-variant-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -20,12 +21,14 @@ import type { CatalogIconKey } from "@/lib/data/catalog-mappers";
 import type { ActionResult } from "@/lib/domain/action-result";
 import type { CatalogMutationResult } from "@/lib/domain/admin-catalog/contracts";
 import type {
+  AdminCatalogFormOptions,
   AdminCategoryRow,
   AdminComponentRow,
   AdminFamilyRow,
   AdminRelationOption,
+  AdminVariantRow,
 } from "@/lib/data/admin-catalog";
-import { Loader2 } from "lucide-react";
+import { Loader2, Pencil, Plus, Trash2 } from "lucide-react";
 import type { FormEvent, ReactNode } from "react";
 import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -47,6 +50,7 @@ type CatalogEntityFormProps = {
   familyId?: string;
   onFamilyChange?: (value: string) => void;
   quickCreateFamily?: ReactNode;
+  variantSection?: ReactNode;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onCancel: () => void;
 };
@@ -97,6 +101,7 @@ export function CatalogEntityForm({
   familyId,
   onFamilyChange,
   quickCreateFamily,
+  variantSection,
   onSubmit,
   onCancel,
 }: CatalogEntityFormProps) {
@@ -265,6 +270,8 @@ export function CatalogEntityForm({
         </div>
       </div>
 
+      {entityType === "componenti" && entity ? variantSection : null}
+
       {error ? (
         <p id={errorId} role="alert" aria-live="polite" className="text-sm text-destructive">
           {error}
@@ -295,6 +302,10 @@ type CatalogEntityDialogProps = {
   blocked?: boolean;
   save: (input: unknown) => Promise<ActionResult<CatalogMutationResult>>;
   saveFamily?: (input: unknown) => Promise<ActionResult<CatalogMutationResult>>;
+  variantOptions?: AdminCatalogFormOptions;
+  loadVariants?: (componentId: string) => Promise<AdminVariantRow[]>;
+  saveVariant?: (input: unknown) => Promise<ActionResult<CatalogMutationResult>>;
+  deleteVariant?: (variantId: string) => Promise<ActionResult<CatalogMutationResult>>;
 };
 
 export function CatalogEntityDialog({
@@ -306,6 +317,10 @@ export function CatalogEntityDialog({
   blocked = false,
   save,
   saveFamily,
+  variantOptions,
+  loadVariants,
+  saveVariant,
+  deleteVariant,
 }: CatalogEntityDialogProps) {
   const [iconKey, setIconKey] = useState<CatalogIconKey>(entity?.iconKey ?? "boxes");
   const [isActive, setIsActive] = useState(entity?.isActive ?? true);
@@ -315,6 +330,21 @@ export function CatalogEntityDialog({
     entity?.kind === "componente" ? entity.familyId : "",
   );
   const [pending, startTransition] = useTransition();
+  const [variants, setVariants] = useState<AdminVariantRow[]>([]);
+  const [variantsLoading, setVariantsLoading] = useState(false);
+  const [variantEditor, setVariantEditor] = useState<AdminVariantRow | null | undefined>();
+
+  async function refreshVariants() {
+    if (entity?.kind !== "componente" || !loadVariants) return;
+    setVariantsLoading(true);
+    try {
+      setVariants(await loadVariants(entity.id));
+    } catch {
+      setError("Non è stato possibile caricare le varianti collegate.");
+    } finally {
+      setVariantsLoading(false);
+    }
+  }
 
   useEffect(() => {
     setIconKey(entity?.iconKey ?? "boxes");
@@ -322,6 +352,10 @@ export function CatalogEntityDialog({
     setError(null);
     setFamilyOptions(families);
     setFamilyId(entity?.kind === "componente" ? entity.familyId : "");
+    setVariantEditor(undefined);
+    void refreshVariants();
+    // Reload only when the edited entity or dialog inputs change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entity, families, open]);
 
   function close() {
@@ -374,7 +408,57 @@ export function CatalogEntityDialog({
     });
   }
 
-  return (
+  const variantSection = entity?.kind === "componente" && variantOptions && saveVariant ? (
+    <section className="space-y-3 rounded-lg border border-border p-4" aria-labelledby="component-variants-title">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h3 id="component-variants-title" className="font-semibold">Varianti collegate</h3>
+          <p className="text-sm text-muted-foreground">Aggiungi, modifica o elimina le varianti del componente.</p>
+        </div>
+        <Button type="button" size="sm" disabled={pending || variantsLoading} onClick={() => setVariantEditor(null)}>
+          <Plus aria-hidden="true" /> Aggiungi variante
+        </Button>
+      </div>
+      {variantsLoading ? <p className="text-sm text-muted-foreground">Caricamento varianti…</p> : null}
+      {!variantsLoading && variants.length === 0 ? <p className="text-sm text-muted-foreground">Nessuna variante collegata.</p> : null}
+      <div className="space-y-2">
+        {variants.map((variant) => (
+          <div key={variant.id} className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium">{variant.fabtekCode}</p>
+              <p className="truncate text-xs text-muted-foreground">{variant.description}</p>
+            </div>
+            <div className="flex gap-1">
+              <Button type="button" variant="ghost" size="icon-sm" aria-label={`Modifica ${variant.fabtekCode}`} onClick={() => setVariantEditor(variant)}><Pencil aria-hidden="true" /></Button>
+              <Button type="button" variant="ghost" size="icon-sm" aria-label={`Elimina ${variant.fabtekCode}`} onClick={async () => {
+                if (!deleteVariant || !window.confirm(`Eliminare definitivamente la variante ${variant.fabtekCode}?`)) return;
+                const result = await deleteVariant(variant.id);
+                if (result.ok) {
+                  setVariants((current) => current.filter((item) => item.id !== variant.id));
+                  toast.success("Variante eliminata.");
+                } else setError(result.error.message);
+              }}><Trash2 aria-hidden="true" /></Button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  ) : undefined;
+
+  const resolvedVariantOptions = entity?.kind === "componente" && variantOptions
+    ? {
+        ...variantOptions,
+        components: [{
+          id: entity.id,
+          name: entity.name,
+          familyId: entity.familyId,
+          isActive: entity.isActive,
+          family: entity.family,
+        }],
+      }
+    : variantOptions;
+
+  const dialog = (
     <Dialog
       open={open}
       onOpenChange={(nextOpen) => !pending && !blocked && onOpenChange(nextOpen)}
@@ -404,10 +488,25 @@ export function CatalogEntityDialog({
               }}
             />
           ) : undefined}
+          variantSection={variantSection}
           onSubmit={submit}
           onCancel={close}
         />
       </DialogContent>
     </Dialog>
   );
+  return variantEditor !== undefined && entity?.kind === "componente" && resolvedVariantOptions && saveVariant ? (
+    <>
+    {dialog}
+      <CatalogVariantDialog
+        open
+        onOpenChange={(nextOpen) => !nextOpen && setVariantEditor(undefined)}
+        entity={variantEditor}
+        options={resolvedVariantOptions}
+        fixedComponentId={entity.id}
+        save={saveVariant}
+        onSaved={refreshVariants}
+      />
+    </>
+  ) : dialog;
 }

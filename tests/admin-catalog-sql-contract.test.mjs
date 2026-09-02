@@ -6,6 +6,8 @@ const migrationPath =
   "supabase/migrations/20260829100000_add_admin_catalog_variant_rpc.sql";
 const iconMigrationPath =
   "supabase/migrations/20260830120000_expand_catalog_icon_keys.sql";
+const datasheetMigrationPath =
+  "supabase/migrations/20260902130000_add_variant_datasheet_url.sql";
 
 async function readMigration() {
   try {
@@ -133,4 +135,18 @@ test("expanded technical icons replace every persisted icon whitelist atomically
     assert.match(source, new RegExp(`'${iconKey}'`, "u"));
   }
   assert.match(source, /^begin;[\s\S]*commit;\s*$/iu);
+});
+
+test("variant datasheet URLs are persisted and constrained to HTTP or HTTPS", async () => {
+  let source = "";
+  try {
+    source = await readFile(datasheetMigrationPath, "utf8");
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+
+  assert.match(source, /add\s+column\s+datasheet_url\s+text/iu);
+  assert.match(source, /datasheet_url[\s\S]*?https\?/iu);
+  assert.match(source, /p_datasheet_url\s+text/iu);
+  assert.match(source, /nullif\s*\(\s*btrim\s*\(\s*p_datasheet_url/iu);
 });

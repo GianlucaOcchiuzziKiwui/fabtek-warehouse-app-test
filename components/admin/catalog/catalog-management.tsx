@@ -2,6 +2,7 @@
 
 import {
   deleteCatalogEntityAction,
+  getComponentVariantsAction,
   saveCategoryAction,
   saveComponentAction,
   saveFamilyAction,
@@ -650,6 +651,16 @@ export function CatalogManagement({
           saveFamily={(input) => runLockedMutation(
             "quick-family",
             () => saveFamilyAction(input),
+          )}
+          variantOptions={editor.formOptions}
+          loadVariants={getComponentVariantsAction}
+          saveVariant={(input) => runLockedMutation(
+            "component-variant",
+            () => saveVariantAction(input),
+          )}
+          deleteVariant={(variantId) => runLockedMutation(
+            variantId,
+            () => deleteCatalogEntityAction({ entity: "varianti", id: variantId }),
           )}
         />
       ) : null}

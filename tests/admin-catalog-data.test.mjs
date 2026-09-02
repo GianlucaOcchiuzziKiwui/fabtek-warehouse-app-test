@@ -21,6 +21,7 @@ registerHooks({
 const {
   deleteCatalogEntity,
   getAdminCatalogFormOptions,
+  getAdminComponentVariants,
   getAdminCatalogPage,
   saveCategory,
   saveComponent,
@@ -29,6 +30,21 @@ const {
   saveVariant,
   setCatalogEntityActive,
 } = await import("../lib/data/admin-catalog.ts");
+
+test("component variant editor loads every variant linked to one component", async () => {
+  const { client, calls } = createSessionClient({
+    item_variants: { data: [], error: null },
+  });
+
+  assert.deepEqual(
+    await getAdminComponentVariants(COMPONENT_ID, dependencies(client)),
+    [],
+  );
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].table, "item_variants");
+  assert.deepEqual(calls[0].filters, [["eq", "component_id", COMPONENT_ID]]);
+  assert.deepEqual(calls[0].orders.map(([column]) => column), ["sort_order", "fabtek_code"]);
+});
 
 const CATEGORY_ID = "10000000-0000-0000-0000-000000000001";
 const FAMILY_ID = "20000000-0000-0000-0000-000000000001";
@@ -314,7 +330,7 @@ test("each tab selects only its list fields and variants embed all display relat
     {
       tab: "varianti",
       table: "item_variants",
-      select: "id,component_id,fabtek_code,oracle_sapio_code,description,diameter,material,connection,unit_of_measure_id,track_inventory,sort_order,is_active,component:components!inner(id,name,is_active,family:families!inner(id,name,is_active)),unit_of_measure:units_of_measure!inner(id,code,name,is_active),categories:item_variant_categories(category:categories!inner(id,code,name,is_active))",
+      select: "id,component_id,fabtek_code,oracle_sapio_code,datasheet_url,description,diameter,material,connection,unit_of_measure_id,track_inventory,sort_order,is_active,component:components!inner(id,name,is_active,family:families!inner(id,name,is_active)),unit_of_measure:units_of_measure!inner(id,code,name,is_active),categories:item_variant_categories(category:categories!inner(id,code,name,is_active))",
       orders: ["sort_order", "fabtek_code", "id"],
     },
   ];
@@ -351,6 +367,7 @@ test("variant listing maps embedded component, family, unit and categories witho
         component_id: COMPONENT_ID,
         fabtek_code: "FT-01",
         oracle_sapio_code: "SAP-01",
+        datasheet_url: "https://example.com/ft-01.pdf",
         description: "Tubo",
         diameter: "DN10",
         material: "PTFE",
@@ -392,6 +409,7 @@ test("variant listing maps embedded component, family, unit and categories witho
     componentId: COMPONENT_ID,
     fabtekCode: "FT-01",
     oracleSapioCode: "SAP-01",
+    datasheetUrl: "https://example.com/ft-01.pdf",
     description: "Tubo",
     diameter: "DN10",
     material: "PTFE",
@@ -553,16 +571,19 @@ test("form options load no tables for groups and every relation needed by inline
   );
   assert.equal(noOptionsClient.calls.length, 0);
 
-  const componentClient = createSessionClient({ families: empty });
+  const componentClient = createSessionClient({
+    categories: empty,
+    families: empty,
+    components: empty,
+    units_of_measure: empty,
+  });
   await getAdminCatalogFormOptions(
     "componenti",
     dependencies(componentClient.client),
   );
-  assert.deepEqual(componentClient.calls.map((call) => call.table), ["families"]);
-  assert.equal(compact(componentClient.calls[0].select), "id,name,is_active");
   assert.deepEqual(
-    componentClient.calls[0].orders.map(([column]) => column),
-    ["sort_order", "name", "id"],
+    componentClient.calls.map((call) => call.table).sort(),
+    ["categories", "families", "units_of_measure"],
   );
 
   const variantClient = createSessionClient({
@@ -680,7 +701,7 @@ test("form options collect every PostgREST page instead of truncating at one tho
   );
   assert.equal(componentOptions.families.length, 1_001);
   assert.deepEqual(
-    familyClient.calls.map((call) => call.range),
+    familyClient.calls.filter((call) => call.table === "families").map((call) => call.range),
     [[0, 999], [1_000, 1_999]],
   );
 
@@ -726,7 +747,7 @@ test("option pages remain complete and stable when sort order and name tie at th
   assert.deepEqual(ids, families.map((family) => family.id));
   assert.equal(new Set(ids).size, families.length);
   assert.deepEqual(
-    calls.map((call) => call.orders),
+    calls.filter((call) => call.table === "families").map((call) => call.orders),
     [
       ["sort_order", "name", "id"],
       ["sort_order", "name", "id"],
@@ -842,6 +863,7 @@ test("variant saves use the atomic RPC and forward every normalized field", asyn
     componentId: COMPONENT_ID,
     fabtekCode: "FT-01",
     oracleSapioCode: null,
+    datasheetUrl: "https://example.com/data.pdf",
     description: "Tubo",
     diameter: null,
     material: "PTFE",
@@ -862,6 +884,7 @@ test("variant saves use the atomic RPC and forward every normalized field", asyn
       p_component_id: COMPONENT_ID,
       p_fabtek_code: "FT-01",
       p_oracle_sapio_code: null,
+      p_datasheet_url: "https://example.com/data.pdf",
       p_description: "Tubo",
       p_diameter: null,
       p_material: "PTFE",

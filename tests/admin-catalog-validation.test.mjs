@@ -156,6 +156,7 @@ test("normalizes every variant field without inventing optional data", () => {
     componentId: COMPONENT_ID,
     fabtekCode: " FT-001 ",
     oracleSapioCode: " ",
+    datasheetUrl: " https://example.com/schede/ft-001.pdf ",
     description: " Tubo PTFE ",
     diameter: " ",
     material: " PTFE ",
@@ -170,6 +171,7 @@ test("normalizes every variant field without inventing optional data", () => {
     componentId: COMPONENT_ID,
     fabtekCode: "FT-001",
     oracleSapioCode: null,
+    datasheetUrl: "https://example.com/schede/ft-001.pdf",
     description: "Tubo PTFE",
     diameter: null,
     material: "PTFE",
@@ -180,6 +182,38 @@ test("normalizes every variant field without inventing optional data", () => {
     sortOrder: 4,
     isActive: true,
   });
+});
+
+test("accepts only optional absolute HTTP or HTTPS datasheet URLs", () => {
+  const base = {
+    id: null,
+    componentId: COMPONENT_ID,
+    fabtekCode: "FT-001",
+    oracleSapioCode: null,
+    description: "Tubo PTFE",
+    diameter: null,
+    material: "PTFE",
+    connection: "1/2 NPT",
+    unitOfMeasureId: UNIT_ID,
+    categoryIds: [CATEGORY_ID],
+    trackInventory: false,
+    sortOrder: 0,
+    isActive: true,
+  };
+
+  assert.equal(parseVariantInput({ ...base, datasheetUrl: " " }).datasheetUrl, null);
+  assert.equal(
+    parseVariantInput({ ...base, datasheetUrl: "http://example.com/data.pdf" }).datasheetUrl,
+    "http://example.com/data.pdf",
+  );
+  for (const datasheetUrl of [
+    "ftp://example.com/data.pdf",
+    "example.com/data.pdf",
+    "/data.pdf",
+    "https://",
+  ]) {
+    assertInvalid(parseVariantInput, { ...base, datasheetUrl });
+  }
 });
 
 test("rejects malformed UUIDs and non-boolean flags", () => {

@@ -53,6 +53,7 @@ export type VariantInput = CatalogEntityInput & {
   componentId: string;
   fabtekCode: string;
   oracleSapioCode: string | null;
+  datasheetUrl: string | null;
   description: string;
   diameter: string | null;
   material: string;
