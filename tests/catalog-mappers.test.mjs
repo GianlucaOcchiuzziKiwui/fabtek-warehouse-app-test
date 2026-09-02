@@ -49,7 +49,7 @@ function row(overrides = {}) {
   };
 }
 
-test("renders untracked variants as unlimited without a fake quantity", () => {
+test("renders untracked variants as available without a fake quantity", () => {
   assert.deepEqual(
     getAvailabilityLabel({
       trackInventory: false,
@@ -57,7 +57,7 @@ test("renders untracked variants as unlimited without a fake quantity", () => {
       lowStockThreshold: null,
       status: "unlimited",
     }),
-    { label: "Disponibilità non limitata", tone: "neutral" },
+    { label: "disponibile", tone: "good" },
   );
 });
 

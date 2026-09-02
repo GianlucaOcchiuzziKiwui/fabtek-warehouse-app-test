@@ -14,6 +14,14 @@ const TONE_STYLES = {
 export function AvailabilityBadge({ stock }: { stock: StockView }) {
   const availability = getAvailabilityLabel(stock);
 
+  if (!stock.trackInventory || stock.status === "unlimited") {
+    return (
+      <span className="text-sm font-medium text-emerald-700 dark:text-emerald-400">
+        {availability.label}
+      </span>
+    );
+  }
+
   return (
     <span
       className={cn(
