@@ -10,6 +10,7 @@ import {
   getFulfillmentRetryStatus,
   IDLE_FULFILLMENT_ATTEMPT,
   matchesFulfillmentAttemptResult,
+  resolveFulfillmentQuantity,
   startFulfillmentAttempt,
   type FulfillmentAttemptState,
 } from "@/lib/domain/fulfillment/attempt-state";
@@ -62,12 +63,16 @@ export function FulfillmentForm({
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const submitter = (event.nativeEvent as SubmitEvent).submitter;
+    const intent = submitter instanceof HTMLButtonElement
+      ? submitter.value
+      : null;
     const started = startFulfillmentAttempt(
       attemptStateRef.current,
       {
         requestId,
         requestLineId,
-        quantity: Number(quantity),
+        quantity: resolveFulfillmentQuantity(quantity, intent, remainingQuantity),
         notes,
       },
       () => crypto.randomUUID(),
@@ -121,6 +126,7 @@ export function FulfillmentForm({
           kind: "success",
           message: `Consegna registrata. Quantità residua: ${result.data.remainingQuantity}.`,
         });
+        router.refresh();
       } catch {
         const failed = failFulfillmentAttempt(
           started.state,
@@ -252,10 +258,23 @@ export function FulfillmentForm({
         </p>
       ) : null}
 
-      <Button type="submit" disabled={isPending || !canSubmit}>
-        <PackageCheck aria-hidden="true" />
-        {submitLabel}
-      </Button>
+      <div className="flex flex-wrap gap-3">
+        <Button type="submit" disabled={isPending || !canSubmit}>
+          <PackageCheck aria-hidden="true" />
+          {submitLabel}
+        </Button>
+        <Button
+          type="submit"
+          name="intent"
+          value="all"
+          formNoValidate
+          variant="secondary"
+          disabled={isPending || retryStatus !== "idle"}
+        >
+          <PackageCheck aria-hidden="true" />
+          Evadi 100%
+        </Button>
+      </div>
     </form>
   );
 }

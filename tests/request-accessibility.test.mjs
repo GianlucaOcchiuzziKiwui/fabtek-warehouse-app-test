@@ -39,3 +39,19 @@ test("request text inputs do not use UTF-16 maxLength limits", async () => {
     assert.doesNotMatch(source, /maxLength=/u, `${file} uses UTF-16 maxLength`);
   }
 });
+
+test("admin request detail exposes complete fulfillment controls with pending feedback", async () => {
+  const [detailSource, bulkSource, lineSource] = await Promise.all([
+    readFile("components/requests/request-detail.tsx", "utf8"),
+    readFile("components/admin/whole-request-fulfillment-button.tsx", "utf8"),
+    readFile("components/admin/fulfillment-form.tsx", "utf8"),
+  ]);
+
+  assert.match(detailSource, /WholeRequestFulfillmentButton/u);
+  assert.match(bulkSource, /Evadi tutto/u);
+  assert.match(bulkSource, /window\.confirm/u);
+  assert.match(bulkSource, /role=\{feedback\.kind === "error" \? "alert" : "status"\}/u);
+  assert.match(lineSource, /Evadi 100%/u);
+  assert.match(lineSource, /value="all"/u);
+  assert.match(lineSource, /formNoValidate/u);
+});

@@ -15,7 +15,10 @@ registerHooks({
   },
 });
 
-const { loadAuthorizedFulfillmentNotification } = await import(
+const {
+  loadAuthorizedFulfillmentNotification,
+  loadAuthorizedWholeRequestNotification,
+} = await import(
   "../lib/data/request-notifications.ts"
 );
 
@@ -112,3 +115,29 @@ test("fulfillment notification rejects an event associated with another request"
     /dati della notifica non sono disponibili/iu,
   );
 });
+
+test("whole-request notification reads only the matching request recipient", async () => {
+  const session = sessionClient({
+    id: REQUEST_ID,
+    requester_email: " Mario@Example.com ",
+  });
+
+  const result = await loadAuthorizedWholeRequestNotification({
+    requestId: REQUEST_ID,
+  }, {
+    createClient: async () => session.client,
+  });
+
+  assert.deepEqual(result, { requesterEmail: "mario@example.com" });
+  assert.deepEqual(session.calls, [
+    ["from", "material_requests"],
+    ["select", expectBulkNotificationSelect],
+    ["eq", "id", REQUEST_ID],
+    ["maybeSingle"],
+  ]);
+});
+
+const expectBulkNotificationSelect = `
+      id,
+      requester_email
+    `;

@@ -14,6 +14,10 @@ export type FulfillmentNotificationData = {
   notes: string | null;
 };
 
+export type WholeRequestNotificationData = {
+  requesterEmail: string;
+};
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/u;
 
@@ -90,4 +94,35 @@ export async function loadAuthorizedFulfillmentNotification(
     deliveredQuantity: quantity,
     notes: notes?.trim() || null,
   };
+}
+
+export async function loadAuthorizedWholeRequestNotification(
+  input: { requestId: string },
+  dependencies: Partial<FulfillmentNotificationDependencies> = {},
+): Promise<WholeRequestNotificationData | null> {
+  if (!UUID_PATTERN.test(input.requestId)) return notificationDataError();
+
+  const createClient = dependencies.createClient ?? createSessionClient;
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("material_requests")
+    .select(`
+      id,
+      requester_email
+    `)
+    .eq("id", input.requestId)
+    .maybeSingle();
+
+  if (error) return notificationDataError();
+  if (!data) return null;
+  if (
+    !isRecord(data)
+    || data.id !== input.requestId
+    || typeof data.requester_email !== "string"
+    || !EMAIL_PATTERN.test(data.requester_email.trim())
+  ) {
+    return notificationDataError();
+  }
+
+  return { requesterEmail: data.requester_email.trim().toLowerCase() };
 }

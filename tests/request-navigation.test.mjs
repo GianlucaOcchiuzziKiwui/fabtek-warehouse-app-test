@@ -56,8 +56,9 @@ test("builds the summary route with every draft line", () => {
 });
 
 test("keeps the request header and material catalog on separate pages", async () => {
-  const [appLayout, headerPage, materialsPage, requestCartHeader, requestPicker] = await Promise.all([
+  const [appLayout, appNavigation, headerPage, materialsPage, requestCartHeader, requestPicker] = await Promise.all([
     readFile("app/(app)/layout.tsx", "utf8"),
+    readFile("components/layout/app-navigation.tsx", "utf8"),
     readFile("app/(app)/richieste/nuova/page.tsx", "utf8"),
     readFile("app/(app)/richieste/nuova/materiali/page.tsx", "utf8").catch(() => ""),
     readFile("components/requests/request-cart-header.tsx", "utf8").catch(() => ""),
@@ -67,7 +68,7 @@ test("keeps the request header and material catalog on separate pages", async ()
   assert.doesNotMatch(headerPage, /RequestCatalogPicker/u);
   assert.match(materialsPage, /RequestCatalogPicker/u);
   assert.doesNotMatch(materialsPage, /CartSummary/u);
-  assert.match(appLayout, /RequestCartHeader/u);
+  assert.match(appNavigation, /RequestCartHeader/u);
   assert.match(appLayout, /showRequestCart/u);
   assert.match(requestCartHeader, /\/richieste\/nuova/u);
   assert.match(requestCartHeader, /usePathname/u);

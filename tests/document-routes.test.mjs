@@ -272,6 +272,9 @@ function requestDetailView(canGenerateFinalReport) {
 test("request detail renders on-demand PDF actions from the explicit final-report capability", () => {
   const { RequestDetail } = loadProjectModule("components/requests/request-detail.tsx", new Map([
     ["@/components/admin/fulfillment-form", { FulfillmentForm: () => null }],
+    ["@/components/admin/whole-request-fulfillment-button", {
+      WholeRequestFulfillmentButton: () => null,
+    }],
     ["@/components/requests/request-status-badge", {
       RequestStatusBadge: ({ status }) => React.createElement("span", null, status.label),
     }],

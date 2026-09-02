@@ -31,6 +31,14 @@ export const IDLE_FULFILLMENT_ATTEMPT: FulfillmentAttemptState = {
   phase: "idle",
 };
 
+export function resolveFulfillmentQuantity(
+  quantity: string,
+  intent: string | null,
+  remainingQuantity: number,
+) {
+  return intent === "all" ? remainingQuantity : Number(quantity);
+}
+
 export function matchesFulfillmentAttemptResult(
   attempt: FulfillmentAttempt,
   result: { requestId: string; requestLineId: string },

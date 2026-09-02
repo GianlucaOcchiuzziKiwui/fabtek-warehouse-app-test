@@ -1,9 +1,13 @@
 import "server-only";
 
 import { loadAuthorizedOfficialPdfSource } from "@/lib/data/documents";
-import { loadAuthorizedFulfillmentNotification } from "@/lib/data/request-notifications";
+import {
+  loadAuthorizedFulfillmentNotification,
+  loadAuthorizedWholeRequestNotification,
+} from "@/lib/data/request-notifications";
 import { createOnDemandPdf } from "@/lib/domain/documents/on-demand-pdf";
 import type { FulfillmentResult } from "@/lib/domain/fulfillment/fulfill-request-line";
+import type { FulfillWholeRequestResult } from "@/lib/domain/fulfillment/fulfill-whole-request";
 import {
   EmailServiceError,
   getEmailSettings,
@@ -114,6 +118,45 @@ export async function sendRequestFulfilledEmail(
       subject: template.subject,
       html: template.html,
       text: template.text,
+      attachments: [{ content: pdf.buffer, filename: pdf.filename }],
+      idempotencyKey: `request-fulfilled/${result.idempotencyKey}`,
+    });
+  } catch (error) {
+    if (error instanceof FulfillmentEmailError) throw error;
+    if (error instanceof EmailServiceError) {
+      throw new FulfillmentEmailError(error.code);
+    }
+    throw error;
+  }
+}
+
+export async function sendWholeRequestFulfilledEmail(
+  result: FulfillWholeRequestResult,
+): Promise<void> {
+  try {
+    const notification = await loadAuthorizedWholeRequestNotification({
+      requestId: result.requestId,
+    });
+    if (!notification) {
+      throw new FulfillmentEmailError("FULFILLMENT_NOTIFICATION_NOT_FOUND");
+    }
+    const requesterEmail = normalizeEmail(notification.requesterEmail);
+    if (!requesterEmail) throw new FulfillmentEmailError("INVALID_EMAIL_CONFIG");
+
+    const source = await loadAuthorizedOfficialPdfSource(result.requestId, "final_report");
+    if (!source) throw new FulfillmentEmailError("REQUEST_DOCUMENT_NOT_FOUND");
+    const pdf = await createOnDemandPdf(source, "final_report");
+    const subject = `Richiesta materiale #${source.requestNumber} completata`;
+    const lineLabel = result.fulfilledLineCount === 1 ? "riga evasa" : "righe evase";
+    const summary = `${result.fulfilledLineCount} ${lineLabel} completamente`;
+    const { warehouseEmails } = getEmailSettings();
+
+    await sendEmail({
+      to: [requesterEmail],
+      bcc: warehouseEmails,
+      subject,
+      html: `<div style="font-family:Arial,sans-serif;color:#1f2937"><h1 style="font-size:20px">${escapeHtml(subject)}</h1><p>La richiesta è stata evasa completamente.</p><p>${escapeHtml(summary)}.</p><p>Il report finale è allegato a questa email.</p></div>`,
+      text: `${subject}\n\nLa richiesta è stata evasa completamente.\n${summary}.\n\nIl report finale è allegato a questa email.`,
       attachments: [{ content: pdf.buffer, filename: pdf.filename }],
       idempotencyKey: `request-fulfilled/${result.idempotencyKey}`,
     });

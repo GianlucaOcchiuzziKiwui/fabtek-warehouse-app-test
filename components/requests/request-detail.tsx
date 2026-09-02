@@ -1,5 +1,6 @@
 import { RequestStatusBadge } from "@/components/requests/request-status-badge";
 import { FulfillmentForm } from "@/components/admin/fulfillment-form";
+import { WholeRequestFulfillmentButton } from "@/components/admin/whole-request-fulfillment-button";
 import { RequestPdfDownloadButton } from "@/components/requests/request-pdf-download-button";
 import type {
   FulfillmentHistoryItem,
@@ -126,6 +127,10 @@ export function RequestDetail({
   created?: boolean;
   canManage?: boolean;
 }) {
+  const remainingLineCount = request.lines.filter(
+    (line) => line.remainingQuantity > 0,
+  ).length;
+
   return (
     <div className="space-y-6">
       {created ? (
@@ -199,13 +204,21 @@ export function RequestDetail({
       </section>
 
       <section aria-labelledby="request-lines-heading" className="space-y-4">
-        <div>
-          <h2 id="request-lines-heading" className="font-heading text-2xl font-semibold text-foreground">
-            Materiali richiesti
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {request.lines.length} {request.lines.length === 1 ? "riga" : "righe"}
-          </p>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h2 id="request-lines-heading" className="font-heading text-2xl font-semibold text-foreground">
+              Materiali richiesti
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {request.lines.length} {request.lines.length === 1 ? "riga" : "righe"}
+            </p>
+          </div>
+          {canManage && remainingLineCount > 0 ? (
+            <WholeRequestFulfillmentButton
+              requestId={request.id}
+              remainingLineCount={remainingLineCount}
+            />
+          ) : null}
         </div>
         {request.lines.map((line) => (
           <RequestLine

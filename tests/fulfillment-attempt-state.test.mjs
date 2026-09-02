@@ -7,6 +7,7 @@ import {
   getFulfillmentRetryStatus,
   IDLE_FULFILLMENT_ATTEMPT,
   matchesFulfillmentAttemptResult,
+  resolveFulfillmentQuantity,
   startFulfillmentAttempt,
 } from "../lib/domain/fulfillment/attempt-state.ts";
 
@@ -14,6 +15,11 @@ const REQUEST_ID = "10000000-0000-4000-8000-000000000001";
 const REQUEST_LINE_ID = "20000000-0000-4000-8000-000000000001";
 const FIRST_KEY = "30000000-0000-4000-8000-000000000001";
 const SECOND_KEY = "30000000-0000-4000-8000-000000000002";
+
+test("the full-line intent always uses the current remaining quantity", () => {
+  assert.equal(resolveFulfillmentQuantity("2", "all", 7), 7);
+  assert.equal(resolveFulfillmentQuantity("2", null, 7), 2);
+});
 
 function draft(overrides = {}) {
   return {

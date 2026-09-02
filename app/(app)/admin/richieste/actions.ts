@@ -7,8 +7,13 @@ import {
   type FulfillmentResult,
 } from "@/lib/domain/fulfillment/fulfill-request-line";
 import {
+  fulfillWholeRequest,
+  type FulfillWholeRequestResult,
+} from "@/lib/domain/fulfillment/fulfill-whole-request";
+import {
   FulfillmentEmailError,
   sendRequestFulfilledEmail,
+  sendWholeRequestFulfilledEmail,
 } from "@/lib/email/request-fulfilled";
 import { revalidatePath } from "next/cache";
 
@@ -33,6 +38,35 @@ export async function fulfillRequestLineAction(
         requestLineId: result.data.requestLineId,
         errorCode: emailErrorCode(error),
       });
+    }
+    revalidatePath("/admin/richieste");
+    revalidatePath(`/richieste/${result.data.requestId}`);
+  }
+
+  return result;
+}
+
+export async function fulfillWholeRequestAction(
+  input: unknown,
+): Promise<ActionResult<FulfillWholeRequestResult>> {
+  await requirePermission("requests:manage");
+
+  const result = await fulfillWholeRequest(input);
+  if (result.ok) {
+    try {
+      await sendWholeRequestFulfilledEmail(result.data);
+    } catch (error) {
+      console.error("Whole-request fulfillment email failed", {
+        requestId: result.data.requestId,
+        errorCode: emailErrorCode(error),
+      });
+      return {
+        ok: false,
+        error: {
+          code: "FULFILLMENT_EMAIL_FAILED",
+          message: "La richiesta è stata evasa, ma la notifica finale non è stata inviata. Riprova per inviarla senza evadere nuovamente le righe.",
+        },
+      };
     }
     revalidatePath("/admin/richieste");
     revalidatePath(`/richieste/${result.data.requestId}`);

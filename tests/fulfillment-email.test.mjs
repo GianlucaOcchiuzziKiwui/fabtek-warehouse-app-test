@@ -247,3 +247,186 @@ test("the fulfillment completing a request emails the final report", async () =>
     assert.deepEqual(options, { idempotencyKey: `request-fulfilled/${IDEMPOTENCY_KEY}` });
   });
 });
+
+test("whole-request fulfillment authorizes once and sends one final notification", async () => {
+  let permissionChecks = 0;
+  let fulfillmentCalls = 0;
+  let notificationCalls = 0;
+  const revalidated = [];
+  const expected = {
+    requestId: REQUEST_ID,
+    idempotencyKey: IDEMPOTENCY_KEY,
+    fulfilledLineCount: 3,
+    requestStatus: "evasa",
+  };
+  const overrides = new Map([
+    ["@/lib/auth/current-profile", {
+      async requirePermission(permission) {
+        assert.equal(permission, "requests:manage");
+        permissionChecks += 1;
+      },
+    }],
+    ["@/lib/domain/fulfillment/fulfill-request-line", {}],
+    ["@/lib/domain/fulfillment/fulfill-whole-request", {
+      async fulfillWholeRequest(input) {
+        fulfillmentCalls += 1;
+        assert.deepEqual(input, { valid: "bulk" });
+        return { ok: true, data: expected };
+      },
+    }],
+    ["@/lib/email/request-fulfilled", {
+      FulfillmentEmailError: class extends Error {},
+      async sendRequestFulfilledEmail() {},
+      async sendWholeRequestFulfilledEmail(result) {
+        notificationCalls += 1;
+        assert.equal(result, expected);
+      },
+    }],
+    ["next/cache", {
+      revalidatePath(pathname) {
+        revalidated.push(pathname);
+      },
+    }],
+  ]);
+  const { fulfillWholeRequestAction } = loadProjectModule(
+    "app/(app)/admin/richieste/actions.ts",
+    overrides,
+  );
+
+  const result = await fulfillWholeRequestAction({ valid: "bulk" });
+
+  assert.deepEqual(result, { ok: true, data: expected });
+  assert.equal(permissionChecks, 1);
+  assert.equal(fulfillmentCalls, 1);
+  assert.equal(notificationCalls, 1);
+  assert.deepEqual(revalidated, [
+    "/admin/richieste",
+    `/richieste/${REQUEST_ID}`,
+  ]);
+});
+
+test("whole-request completion email describes the batch and attaches the final report", async () => {
+  await withEmailEnvironment(async () => {
+    const sends = [];
+    const pdf = Buffer.from("%PDF-whole-request");
+    class Resend {
+      constructor() {
+        this.emails = {
+          send: async (message, options) => {
+            sends.push({ message, options });
+            return { data: { id: "email-whole" }, error: null };
+          },
+        };
+      }
+    }
+    const overrides = new Map([
+      ["server-only", {}],
+      ["resend", { Resend }],
+      ["@/lib/data/request-notifications", {
+        async loadAuthorizedFulfillmentNotification() {},
+        async loadAuthorizedWholeRequestNotification(input) {
+          assert.deepEqual(input, {
+            requestId: REQUEST_ID,
+          });
+          return { requesterEmail: "mario@example.com" };
+        },
+      }],
+      ["@/lib/data/documents", {
+        async loadAuthorizedOfficialPdfSource(requestId, kind) {
+          assert.equal(requestId, REQUEST_ID);
+          assert.equal(kind, "final_report");
+          return officialSource("evasa");
+        },
+      }],
+      ["@/lib/domain/documents/on-demand-pdf", {
+        async createOnDemandPdf(_source, kind) {
+          assert.equal(kind, "final_report");
+          return { buffer: pdf, filename: "fabtek-report-finale-000042.pdf" };
+        },
+      }],
+    ]);
+    const { sendWholeRequestFulfilledEmail } = loadProjectModule(
+      "lib/email/request-fulfilled.ts",
+      overrides,
+    );
+
+    await sendWholeRequestFulfilledEmail({
+      requestId: REQUEST_ID,
+      idempotencyKey: IDEMPOTENCY_KEY,
+      fulfilledLineCount: 3,
+      requestStatus: "evasa",
+    });
+
+    assert.equal(sends.length, 1);
+    const [{ message, options }] = sends;
+    assert.equal(message.subject, "Richiesta materiale #42 completata");
+    assert.match(message.text, /3 righe evase completamente/u);
+    assert.deepEqual(message.attachments, [{
+      content: pdf,
+      filename: "fabtek-report-finale-000042.pdf",
+    }]);
+    assert.deepEqual(options, {
+      idempotencyKey: `request-fulfilled/${IDEMPOTENCY_KEY}`,
+    });
+  });
+});
+
+test("a failed whole-request email returns a retryable result with the committed request id", async () => {
+  const revalidated = [];
+  const expected = {
+    requestId: REQUEST_ID,
+    idempotencyKey: IDEMPOTENCY_KEY,
+    fulfilledLineCount: 3,
+    requestStatus: "evasa",
+  };
+  const overrides = new Map([
+    ["@/lib/auth/current-profile", { async requirePermission() {} }],
+    ["@/lib/domain/fulfillment/fulfill-request-line", {}],
+    ["@/lib/domain/fulfillment/fulfill-whole-request", {
+      async fulfillWholeRequest() {
+        return { ok: true, data: expected };
+      },
+    }],
+    ["@/lib/email/request-fulfilled", {
+      FulfillmentEmailError: class extends Error {
+        constructor() {
+          super("email failed");
+          this.code = "EMAIL_DELIVERY_FAILED";
+        }
+      },
+      async sendRequestFulfilledEmail() {},
+      async sendWholeRequestFulfilledEmail() {
+        const error = new Error("email failed");
+        error.code = "EMAIL_DELIVERY_FAILED";
+        throw error;
+      },
+    }],
+    ["next/cache", {
+      revalidatePath(pathname) {
+        revalidated.push(pathname);
+      },
+    }],
+  ]);
+  const { fulfillWholeRequestAction } = loadProjectModule(
+    "app/(app)/admin/richieste/actions.ts",
+    overrides,
+  );
+
+  const originalConsoleError = console.error;
+  console.error = () => {};
+  let result;
+  try {
+    result = await fulfillWholeRequestAction({ valid: "bulk" });
+  } finally {
+    console.error = originalConsoleError;
+  }
+
+  assert.deepEqual(result, {
+    ok: false,
+    error: {
+      code: "FULFILLMENT_EMAIL_FAILED",
+      message: "La richiesta è stata evasa, ma la notifica finale non è stata inviata. Riprova per inviarla senza evadere nuovamente le righe.",
+    },
+  });
+  assert.deepEqual(revalidated, []);
+});
