@@ -4,7 +4,6 @@ import { ProfileProvider } from "@/components/auth/profile-context";
 import { AppNavigation } from "@/components/layout/app-navigation";
 import { LogoutButton } from "@/components/logout-button";
 import { RequestDraftProvider } from "@/components/requests/request-draft-provider";
-import { RequestCartHeader } from "@/components/requests/request-cart-header";
 import { Toaster } from "@/components/ui/sonner";
 import { requireCurrentProfile } from "@/lib/auth/current-profile";
 import { ShieldCheck, UserRound } from "lucide-react";

@@ -13,7 +13,6 @@ import { Label } from "@/components/ui/label";
 import { PasswordInput } from "@/components/ui/password-input";
 import { createClient } from "@/lib/supabase/client";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 export function LoginForm() {
@@ -21,7 +20,6 @@ export function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const router = useRouter();
 
   const handleLogin = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -37,8 +35,9 @@ export function LoginForm() {
 
       if (error) throw error;
 
-      router.replace("/");
-      router.refresh();
+      // Force a document navigation so the first protected request is made
+      // with the auth cookies written by the Supabase browser client.
+      window.location.replace("/");
     } catch (error: unknown) {
       setError(
         error instanceof Error
