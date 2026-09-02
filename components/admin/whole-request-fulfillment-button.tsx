@@ -9,9 +9,11 @@ import { useRef, useState, useTransition } from "react";
 export function WholeRequestFulfillmentButton({
   requestId,
   remainingLineCount,
+  ariaLabel,
 }: {
   requestId: string;
-  remainingLineCount: number;
+  remainingLineCount?: number;
+  ariaLabel?: string;
 }) {
   const router = useRouter();
   const idempotencyKeyRef = useRef<string | null>(null);
@@ -22,11 +24,13 @@ export function WholeRequestFulfillmentButton({
   } | null>(null);
 
   function fulfillAll() {
+    const confirmationMessage = remainingLineCount === undefined
+      ? "Evadi completamente tutte le righe residue? L'operazione aggiornerà anche le giacenze."
+      : `Evadi completamente ${remainingLineCount} ${remainingLineCount === 1 ? "riga" : "righe"}? L'operazione aggiornerà anche le giacenze.`;
+
     if (
       !idempotencyKeyRef.current
-      && !window.confirm(
-        `Evadi completamente ${remainingLineCount} ${remainingLineCount === 1 ? "riga" : "righe"}? L'operazione aggiornerà anche le giacenze.`,
-      )
+      && !window.confirm(confirmationMessage)
     ) {
       return;
     }
@@ -63,7 +67,12 @@ export function WholeRequestFulfillmentButton({
 
   return (
     <div className="space-y-2">
-      <Button type="button" onClick={fulfillAll} disabled={isPending}>
+      <Button
+        type="button"
+        aria-label={ariaLabel}
+        onClick={fulfillAll}
+        disabled={isPending}
+      >
         <PackageCheck aria-hidden="true" />
         {isPending ? "Evasione in corso..." : "Evadi tutto"}
       </Button>

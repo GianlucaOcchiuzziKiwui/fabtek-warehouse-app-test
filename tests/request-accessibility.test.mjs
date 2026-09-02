@@ -55,3 +55,24 @@ test("admin request detail exposes complete fulfillment controls with pending fe
   assert.match(lineSource, /value="all"/u);
   assert.match(lineSource, /formNoValidate/u);
 });
+
+test("admin request list exposes whole-request fulfillment beside detail actions", async () => {
+  const [source, buttonSource] = await Promise.all([
+    readFile("app/(app)/admin/richieste/page.tsx", "utf8"),
+    readFile("components/admin/whole-request-fulfillment-button.tsx", "utf8"),
+  ]);
+
+  assert.match(source, /import \{ WholeRequestFulfillmentButton \}/u);
+  assert.match(source, /request\.status\.tone !== "good"/u);
+  assert.doesNotMatch(source, /remainingLineCount=\{request\.lineCount\}/u);
+  assert.equal(source.match(/ariaLabel=\{`Evadi completamente richiesta/gu)?.length, 2);
+  assert.match(source, /lg:block/u);
+  assert.match(source, /lg:hidden/u);
+  assert.equal(
+    source.match(/<WholeRequestFulfillmentButton/g)?.length,
+    2,
+    "desktop and mobile lists must both expose the action",
+  );
+  assert.match(buttonSource, /aria-label=\{ariaLabel\}/u);
+  assert.match(buttonSource, /Evadi completamente tutte le righe residue/u);
+});

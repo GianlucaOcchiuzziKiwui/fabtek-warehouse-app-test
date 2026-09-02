@@ -1,3 +1,4 @@
+import { WholeRequestFulfillmentButton } from "@/components/admin/whole-request-fulfillment-button";
 import { RequestStatusBadge } from "@/components/requests/request-status-badge";
 import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeading } from "@/components/shared/page-heading";
@@ -82,7 +83,7 @@ function ManagedRequestList({
         {result.total} {result.total === 1 ? "richiesta" : "richieste"}
       </p>
 
-      <div className="hidden overflow-hidden rounded-xl border border-border bg-card shadow-sm md:block">
+      <div className="hidden overflow-hidden rounded-xl border border-border bg-card shadow-sm lg:block">
         <table className="w-full text-left text-sm">
           <thead className="bg-muted/70 text-xs uppercase tracking-wide text-muted-foreground">
             <tr>
@@ -104,13 +105,21 @@ function ManagedRequestList({
                 <td className="px-4 py-4">{request.project}</td>
                 <td className="px-4 py-4">{request.lineCount}</td>
                 <td className="px-4 py-4"><RequestStatusBadge status={request.status} /></td>
-                <td className="px-4 py-4 text-right">
-                  <Button asChild variant="ghost" className="min-h-10">
-                    <Link href={`/richieste/${request.id}`} aria-label={`Apri richiesta ${request.requestNumber}`}>
-                      Dettaglio
-                      <ArrowRight aria-hidden="true" />
-                    </Link>
-                  </Button>
+                <td className="px-4 py-4">
+                  <div className="flex items-start justify-end gap-2">
+                    {request.status.tone !== "good" ? (
+                      <WholeRequestFulfillmentButton
+                        requestId={request.id}
+                        ariaLabel={`Evadi completamente richiesta ${request.requestNumber}`}
+                      />
+                    ) : null}
+                    <Button asChild variant="ghost" className="min-h-10">
+                      <Link href={`/richieste/${request.id}`} aria-label={`Apri richiesta ${request.requestNumber}`}>
+                        Dettaglio
+                        <ArrowRight aria-hidden="true" />
+                      </Link>
+                    </Button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -118,7 +127,7 @@ function ManagedRequestList({
         </table>
       </div>
 
-      <div className="grid gap-4 md:hidden">
+      <div className="grid gap-4 lg:hidden">
         {result.items.map((request) => (
           <article key={request.id} className="rounded-xl border border-border bg-card p-4 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -135,9 +144,17 @@ function ManagedRequestList({
               <div><dt className="text-xs text-muted-foreground">Data</dt><dd className="mt-1">{request.requestedAtLabel}</dd></div>
               <div><dt className="text-xs text-muted-foreground">Righe</dt><dd className="mt-1">{request.lineCount}</dd></div>
             </dl>
-            <Button asChild variant="outline" className="mt-4 w-full">
-              <Link href={`/richieste/${request.id}`}>Apri dettaglio <ArrowRight aria-hidden="true" /></Link>
-            </Button>
+            <div className="mt-4 flex flex-wrap items-start gap-2">
+              {request.status.tone !== "good" ? (
+                <WholeRequestFulfillmentButton
+                  requestId={request.id}
+                  ariaLabel={`Evadi completamente richiesta ${request.requestNumber}`}
+                />
+              ) : null}
+              <Button asChild variant="outline" className="min-h-10 flex-1">
+                <Link href={`/richieste/${request.id}`}>Apri dettaglio <ArrowRight aria-hidden="true" /></Link>
+              </Button>
+            </div>
           </article>
         ))}
       </div>
