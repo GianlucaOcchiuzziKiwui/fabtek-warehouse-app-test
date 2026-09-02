@@ -4,7 +4,6 @@ import { requirePermission } from "@/lib/auth/current-profile";
 import {
   mapCatalogNavigationMatches,
   mapCatalogOptions,
-  mapDerivedCatalogOptions,
   mapCatalogSelections,
   mapCatalogRows,
   normalizeCatalogSelectionInputs,
@@ -49,21 +48,6 @@ const PAGE_SIZE = 24;
 const MAX_QUERY_LENGTH = 120;
 const NAVIGATION_SEARCH_LIMIT = 12;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-const DERIVED_TAXONOMY_SELECT = `
-  item_variant:item_variants!inner(
-    is_active,
-    component:components!inner(
-      id,
-      name,
-      icon_key,
-      sort_order,
-      family_id,
-      is_active,
-      family:families!inner(id, name, icon_key, sort_order, is_active)
-    )
-  )
-`;
 
 const FAMILY_SEARCH_SELECT = `
   id,
@@ -271,55 +255,27 @@ export async function getCatalogFilters(
   const normalized = normalizeFilters(filters);
   const supabase = await createClient();
 
-  const categoriesQuery = supabase
-    .from("categories")
-    .select("id, name, icon_key, sort_order")
-    .eq("is_active", true)
-    .order("sort_order")
-    .order("name");
+  const { data, error } = await supabase.rpc("get_catalog_filter_options", {
+    p_category_id: normalized.categoryId,
+    p_family_id: normalized.familyId,
+  });
+  if (error) reportCatalogError("load filter options", error);
 
-  const familiesQuery = normalized.categoryId
-    ? supabase
-        .from("item_variant_categories")
-        .select(DERIVED_TAXONOMY_SELECT)
-        .eq("category_id", normalized.categoryId)
-        .eq("item_variant.is_active", true)
-        .eq("item_variant.component.is_active", true)
-        .eq("item_variant.component.family.is_active", true)
-    : Promise.resolve({ data: [], error: null });
-
-  const componentsQuery = normalized.categoryId && normalized.familyId
-    ? supabase
-        .from("item_variant_categories")
-        .select(DERIVED_TAXONOMY_SELECT)
-        .eq("category_id", normalized.categoryId)
-        .eq("item_variant.is_active", true)
-        .eq("item_variant.component.is_active", true)
-        .eq("item_variant.component.family_id", normalized.familyId)
-        .eq("item_variant.component.family.is_active", true)
-    : Promise.resolve({ data: [], error: null });
-
-  const [categoriesResponse, familiesResponse, componentsResponse] = await Promise.all([
-    categoriesQuery,
-    familiesQuery,
-    componentsQuery,
-  ]);
-
-  if (categoriesResponse.error) reportCatalogError("load categories", categoriesResponse.error);
-  if (familiesResponse.error) reportCatalogError("load families", familiesResponse.error);
-  if (componentsResponse.error) reportCatalogError("load components", componentsResponse.error);
-
-  const categories = mapCatalogOptions(categoriesResponse.data, "factory");
-  const families = mapDerivedCatalogOptions(familiesResponse.data, "family");
-  const familyIsSelectable = !normalized.familyId
-    || families.some((option) => option.id === normalized.familyId);
+  const rows = recordArray(data);
 
   return {
-    categories,
-    families,
-    components: familyIsSelectable
-      ? mapDerivedCatalogOptions(componentsResponse.data, "component")
-      : [],
+    categories: mapCatalogOptions(
+      rows.filter((row) => row.option_kind === "category"),
+      "factory",
+    ),
+    families: mapCatalogOptions(
+      rows.filter((row) => row.option_kind === "family"),
+      "boxes",
+    ),
+    components: mapCatalogOptions(
+      rows.filter((row) => row.option_kind === "component"),
+      "component",
+    ),
   };
 }
 
