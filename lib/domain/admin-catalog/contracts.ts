@@ -65,4 +65,5 @@ export type VariantInput = CatalogEntityInput & {
 
 export type CatalogMutationResult = {
   id: string;
+  warning?: string;
 };

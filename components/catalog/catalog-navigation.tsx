@@ -1,5 +1,6 @@
 import { EmptyState } from "@/components/shared/empty-state";
 import { CatalogIcon } from "@/components/catalog/catalog-icon";
+import { CatalogPhoto } from "@/components/catalog/catalog-photo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -35,12 +36,14 @@ function CatalogTile({
   iconKey,
   title,
   context,
+  photoUrl,
 }: {
   href: string;
   kind: CatalogNavigationKind;
   iconKey: CatalogIconKey;
   title: string;
   context?: string;
+  photoUrl?: string | null;
 }) {
   return (
     <Link
@@ -51,7 +54,7 @@ function CatalogTile({
         data-catalog-tile-icon
         className={`flex items-center justify-center bg-linear-to-br from-brand-navy to-brand-navy-deep text-white ${kind === "category" ? "h-24" : "h-20"}`}
       >
-        <CatalogIcon iconKey={iconKey} className={kind === "category" ? "size-11" : "size-9"} strokeWidth={1.7} />
+        {photoUrl ? <CatalogPhoto src={photoUrl} name={title} className="h-full w-full rounded-none" /> : <CatalogIcon iconKey={iconKey} className={kind === "category" ? "size-11" : "size-9"} strokeWidth={1.7} />}
       </span>
       <span className="flex min-h-18 items-center justify-between gap-3 px-3 py-3">
         <span className="min-w-0">
@@ -129,6 +132,7 @@ function NavigationCards({
             kind={kind}
             iconKey={item.iconKey}
             title={item.name}
+            photoUrl={item.photoUrl}
           />
         );
       })}
@@ -179,6 +183,7 @@ function SearchResults({
                     kind={kind}
                     iconKey={current.iconKey}
                     title={current.name}
+                    photoUrl={current.photoUrl}
                     context={context.length > 0 ? context.join(" → ") : undefined}
                   />
                 );

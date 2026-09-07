@@ -1,3 +1,4 @@
+import { CatalogPhoto } from "@/components/catalog/catalog-photo";
 import { AvailabilityBadge } from "@/components/catalog/availability-badge";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
@@ -225,6 +226,7 @@ export function CatalogResults({
                   ) : null}
                 </td>
                 <td className="space-y-2 px-4 py-4">
+                  <CatalogPhoto src={variant.component?.photoUrl} name={variant.component?.name ?? variant.description} />
                   <p className="font-medium text-foreground">{variant.description}</p>
                   <p className="text-xs text-muted-foreground">
                     {[variant.family?.name, variant.component?.name].filter(Boolean).join(" · ")}
@@ -245,6 +247,7 @@ export function CatalogResults({
       <div className="grid gap-4 md:hidden">
         {result.items.map((variant) => (
           <article key={variant.id} className="space-y-4 rounded-xl border border-border bg-card p-4 shadow-sm">
+            <CatalogPhoto src={variant.component?.photoUrl} name={variant.component?.name ?? variant.description} className="h-32 w-full" />
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-primary">{variant.fabtekCode}</p>
               <h2 className="mt-1 font-heading text-lg font-semibold">{variant.description}</h2>

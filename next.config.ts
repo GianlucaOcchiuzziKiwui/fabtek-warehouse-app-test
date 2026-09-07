@@ -2,6 +2,10 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   cacheComponents: true,
+  experimental: {
+    // The file limit is 2 MB; allow room for multipart fields and boundaries.
+    serverActions: { bodySizeLimit: "3mb" },
+  },
   async headers() {
     return [
       {

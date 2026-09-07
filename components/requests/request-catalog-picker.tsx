@@ -1,3 +1,4 @@
+import { CatalogPhoto } from "@/components/catalog/catalog-photo";
 import { AvailabilityBadge } from "@/components/catalog/availability-badge";
 import { CatalogNavigation } from "@/components/catalog/catalog-navigation";
 import { RequestItemRowControls } from "@/components/requests/add-to-request-button";
@@ -52,7 +53,12 @@ function RequestItemTable({
         <tbody>
           {variants.map((variant) => (
             <tr key={`${variant.id}:${selectedCategoryId ?? "all"}`} className="border-b border-border last:border-b-0 even:bg-muted/45">
-              <td className="px-3 py-3 align-middle font-mono font-semibold" title={variant.description}>{variant.fabtekCode}</td>
+              <td className="px-3 py-3 align-middle font-mono font-semibold" title={variant.description}>
+                <div className="flex items-center gap-3">
+                  <CatalogPhoto src={variant.component?.photoUrl} name={variant.component?.name ?? variant.description} className="size-12" />
+                  {variant.fabtekCode}
+                </div>
+              </td>
               <td className="px-3 py-3 align-middle">{variant.diameter || "—"}</td>
               <td className="px-3 py-3 align-middle">{variant.material || "—"}</td>
               <td className="px-3 py-3 align-middle">{variant.connection || "—"}</td>

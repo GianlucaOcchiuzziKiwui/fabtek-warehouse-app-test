@@ -92,6 +92,11 @@ function createSessionClient(responses = {}) {
       return this;
     }
 
+    is(column, value) {
+      this.call.filters.push(["is", column, value]);
+      return this;
+    }
+
     or(filters) {
       this.call.filters.push(["or", filters]);
       return this;
@@ -237,6 +242,24 @@ function dependencies(client) {
   return { createClient: async () => client };
 }
 
+test("photo updates compare the stored path, including null, to avoid concurrent replacements", async () => {
+  for (const expectedPath of [null, "components/10000000-0000-4000-8000-000000000001.png"]) {
+    const { client, calls } = createSessionClient({ components: { data: { id: COMPONENT_ID }, error: null } });
+    const path = "components/10000000-0000-4000-8000-000000000002.jpg";
+    const result = await saveComponent({ id: COMPONENT_ID, familyId: FAMILY_ID, name: "Tubo", description: null, iconKey: "component", sortOrder: 0, isActive: true }, dependencies(client), { path, expectedPath });
+    assert.equal(result.ok, true);
+    assert.equal(calls[0].payload.photo_path, path);
+    assert.deepEqual(calls[0].filters, [["eq", "id", COMPONENT_ID], [expectedPath === null ? "is" : "eq", "photo_path", expectedPath]]);
+  }
+});
+
+test("a photo compare-and-swap miss is reported as a conflict instead of success", async () => {
+  const { client } = createSessionClient({ components: { data: null, error: null } });
+  const result = await saveComponent({ id: COMPONENT_ID }, dependencies(client), { path: null, expectedPath: "old.png" });
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, "CATALOG_PHOTO_CONFLICT");
+});
+
 function listQuery(overrides = {}) {
   return {
     tab: "categorie",
@@ -324,7 +347,7 @@ test("each tab selects only its list fields and variants embed all display relat
     {
       tab: "componenti",
       table: "components",
-      select: "id,family_id,name,description,icon_key,sort_order,is_active,family:families!inner(id,name,is_active)",
+      select: "id,family_id,name,description,photo_path,icon_key,sort_order,is_active,family:families!inner(id,name,is_active)",
       orders: ["sort_order", "name", "id"],
     },
     {

@@ -169,6 +169,7 @@ export function CatalogDeleteDialog({
           return;
         }
         toast.success(deactivating ? "Voce disattivata." : "Voce eliminata.");
+        if (result.data.warning) toast.warning(result.data.warning);
         onOpenChange(false);
       } catch {
         setError("Non è stato possibile completare l'operazione. Riprova.");

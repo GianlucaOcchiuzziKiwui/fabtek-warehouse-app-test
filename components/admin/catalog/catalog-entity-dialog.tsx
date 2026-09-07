@@ -1,6 +1,7 @@
 "use client";
 
 import { CatalogIconSelect } from "@/components/admin/catalog/catalog-icon-select";
+import { ImageUploadField, type ImageUploadValue } from "@/components/uploads/image-upload-field";
 import {
   CatalogQuickCreate,
   type QuickCreatedOption,
@@ -51,6 +52,7 @@ type CatalogEntityFormProps = {
   onFamilyChange?: (value: string) => void;
   quickCreateFamily?: ReactNode;
   variantSection?: ReactNode;
+  photoSection?: ReactNode;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onCancel: () => void;
 };
@@ -102,6 +104,7 @@ export function CatalogEntityForm({
   onFamilyChange,
   quickCreateFamily,
   variantSection,
+  photoSection,
   onSubmit,
   onCancel,
 }: CatalogEntityFormProps) {
@@ -227,6 +230,8 @@ export function CatalogEntityForm({
           </div>
         )}
 
+        {entityType === "componenti" ? photoSection : null}
+
         <div className="space-y-2">
           <Label htmlFor="catalog-entity-icon">Icona</Label>
           <CatalogIconSelect
@@ -300,7 +305,7 @@ type CatalogEntityDialogProps = {
   entity: EditableCatalogEntity | null;
   families: AdminRelationOption[];
   blocked?: boolean;
-  save: (input: unknown) => Promise<ActionResult<CatalogMutationResult>>;
+  save: (input: unknown, photo?: FormData) => Promise<ActionResult<CatalogMutationResult>>;
   saveFamily?: (input: unknown) => Promise<ActionResult<CatalogMutationResult>>;
   variantOptions?: AdminCatalogFormOptions;
   loadVariants?: (componentId: string) => Promise<AdminVariantRow[]>;
@@ -325,6 +330,7 @@ export function CatalogEntityDialog({
   const [iconKey, setIconKey] = useState<CatalogIconKey>(entity?.iconKey ?? "boxes");
   const [isActive, setIsActive] = useState(entity?.isActive ?? true);
   const [error, setError] = useState<string | null>(null);
+  const [photo, setPhoto] = useState<ImageUploadValue>({ file: null, remove: false });
   const [familyOptions, setFamilyOptions] = useState(families);
   const [familyId, setFamilyId] = useState(
     entity?.kind === "componente" ? entity.familyId : "",
@@ -350,6 +356,7 @@ export function CatalogEntityDialog({
     setIconKey(entity?.iconKey ?? "boxes");
     setIsActive(entity?.isActive ?? true);
     setError(null);
+    setPhoto({ file: null, remove: false });
     setFamilyOptions(families);
     setFamilyId(entity?.kind === "componente" ? entity.familyId : "");
     setVariantEditor(undefined);
@@ -394,13 +401,20 @@ export function CatalogEntityDialog({
                 familyId,
                 description: formData.get("description"),
               };
-        const result = await save(input);
+        let photoData: FormData | undefined;
+        if (entityType === "componenti" && (photo.file || photo.remove)) {
+          photoData = new FormData();
+          if (photo.file) photoData.set("file", photo.file);
+          if (photo.remove) photoData.set("remove", "true");
+        }
+        const result = await save(input, photoData);
 
         if (!result.ok) {
           setError(result.error.message);
           return;
         }
         toast.success(`${ENTITY_COPY[entityType].singular[0].toUpperCase()}${ENTITY_COPY[entityType].singular.slice(1)} salvata.`);
+        if (result.data.warning) toast.warning(result.data.warning);
         onOpenChange(false);
       } catch {
         setError("Non è stato possibile salvare la voce. Riprova.");
@@ -489,6 +503,16 @@ export function CatalogEntityDialog({
             />
           ) : undefined}
           variantSection={variantSection}
+          photoSection={<ImageUploadField
+            key={`${entity?.id ?? "new"}:${open}`}
+            id="catalog-component-photo"
+            purpose="component-photo"
+            label="Foto del componente"
+            currentUrl={entity?.kind === "componente" ? entity.photoUrl : null}
+            value={photo}
+            onChange={setPhoto}
+            disabled={pending || blocked}
+          />}
           onSubmit={submit}
           onCancel={close}
         />

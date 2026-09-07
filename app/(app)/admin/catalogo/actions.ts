@@ -26,6 +26,7 @@ import {
   parseVariantInput,
 } from "@/lib/domain/admin-catalog/validation";
 import { revalidatePath } from "next/cache";
+import { UploadError } from "@/lib/uploads/policy";
 
 const CATALOG_ENTITIES = new Set<AdminCatalogTab>([
   "categorie",
@@ -111,13 +112,19 @@ export async function saveFamilyAction(
 
 export async function saveComponentAction(
   input: unknown,
+  photo?: FormData,
 ): Promise<ActionResult<CatalogMutationResult>> {
   await requirePermission("catalog:manage");
   try {
-    const result = await saveComponent(parseComponentInput(input));
+    const parsed = parseComponentInput(input);
+    const result = photo === undefined
+      ? await saveComponent(parsed)
+      : await (await import("@/lib/data/component-photo")).saveComponentWithPhoto(parsed, photo);
     revalidateCatalog(result);
+    if (result.ok) revalidatePath("/richieste/nuova/materiali");
     return result;
   } catch (error) {
+    if (error instanceof UploadError) return { ok: false, error: { code: "UPLOAD_FAILED", message: error.message } };
     const result = validationResult(error);
     if (result) return result;
     throw error;

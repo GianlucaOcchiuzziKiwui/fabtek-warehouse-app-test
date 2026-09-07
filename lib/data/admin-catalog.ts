@@ -1,4 +1,6 @@
 import "server-only";
+import { getUploadUrl } from "../uploads/policy.ts";
+import type { ComponentPhotoChange } from "./component-photo.ts";
 
 import type { ActionResult } from "../domain/action-result.ts";
 import type {
@@ -50,6 +52,7 @@ const COMPONENT_SELECT = `
   family_id,
   name,
   description,
+  photo_path,
   icon_key,
   sort_order,
   is_active,
@@ -102,6 +105,7 @@ type OrderOptions = { ascending?: boolean };
 interface AdminCatalogQuery extends PromiseLike<QueryResponse> {
   select(columns: string, options?: SelectOptions): AdminCatalogQuery;
   eq(column: string, value: unknown): AdminCatalogQuery;
+  is(column: string, value: null): AdminCatalogQuery;
   or(filters: string): AdminCatalogQuery;
   order(column: string, options?: OrderOptions): AdminCatalogQuery;
   range(from: number, to: number): AdminCatalogQuery;
@@ -182,6 +186,7 @@ export type AdminComponentRow = AdminCatalogBaseRow & {
   familyId: string;
   name: string;
   description: string | null;
+  photoUrl: string | null;
   iconKey: CatalogIconKey;
   family: AdminRelationOption;
 };
@@ -366,6 +371,7 @@ function mapComponent(value: unknown): AdminComponentRow | null {
         familyId,
         name,
         description: text(value.description),
+        photoUrl: getUploadUrl(value.photo_path),
         iconKey: mappedIconKey,
         family,
       }
@@ -815,6 +821,7 @@ async function saveSingleRow(
   id: string | null,
   payload: Record<string, unknown>,
   dependencies: Partial<AdminCatalogDependencies>,
+  photoChange?: ComponentPhotoChange,
 ): Promise<ActionResult<CatalogMutationResult>> {
   try {
     const createClient = dependencies.createClient ?? defaultCreateClient;
@@ -822,11 +829,19 @@ async function saveSingleRow(
     let mutation = id === null
       ? client.from(table).insert(payload)
       : client.from(table).update(payload).eq("id", id);
+    if (id !== null && photoChange) {
+      mutation = photoChange.expectedPath === null
+        ? mutation.is("photo_path", null)
+        : mutation.eq("photo_path", photoChange.expectedPath);
+    }
     mutation = mutation.select("id");
     const response = await mutation.maybeSingle();
     if (response.error) return mutationError(response.error, "save");
 
     const savedId = rowId(response.data);
+    if (!savedId && id !== null && photoChange) {
+      return { ok: false, error: { code: "CATALOG_PHOTO_CONFLICT", message: "La foto è stata modificata o il componente eliminato. Riapri il componente e riprova." } };
+    }
     if (!savedId) return id === null ? unavailable() : notFound();
     return { ok: true, data: { id: savedId } };
   } catch (error) {
@@ -865,15 +880,17 @@ export function saveFamily(
 export function saveComponent(
   input: ComponentInput,
   dependencies: Partial<AdminCatalogDependencies> = {},
+  photoChange?: ComponentPhotoChange,
 ): Promise<ActionResult<CatalogMutationResult>> {
   return saveSingleRow("components", input.id, {
     family_id: input.familyId,
     name: input.name,
     description: input.description,
+    ...(photoChange ? { photo_path: photoChange.path } : {}),
     icon_key: input.iconKey,
     sort_order: input.sortOrder,
     is_active: input.isActive,
-  }, dependencies);
+  }, dependencies, photoChange);
 }
 
 export function saveUnit(
@@ -971,11 +988,15 @@ export async function deleteCatalogEntity(
       .from(table)
       .delete()
       .eq("id", id)
-      .select("id")
+      .select(table === "components" ? "id, photo_path" : "id")
       .maybeSingle();
     if (response.error) return mutationError(response.error, "delete");
 
     const deletedId = rowId(response.data);
+    if (deletedId && table === "components" && isRecord(response.data) && text(response.data.photo_path)) {
+      const { cleanupComponentPhoto } = await import("./component-photo.ts");
+      return cleanupComponentPhoto({ ok: true, data: { id: deletedId } }, text(response.data.photo_path));
+    }
     return deletedId ? { ok: true, data: { id: deletedId } } : notFound();
   } catch (error) {
     return mutationError(error, "delete");

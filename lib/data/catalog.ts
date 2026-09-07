@@ -69,6 +69,7 @@ const COMPONENT_SEARCH_SELECT = `
   id,
   name,
   icon_key,
+  photo_path,
   is_active,
   family:families!inner(id, name, icon_key, is_active),
   items:item_variants!inner(
@@ -92,6 +93,7 @@ const CATALOG_SELECT = `
     id,
     name,
     icon_key,
+    photo_path,
     family:families!inner(id, name, icon_key)
   ),
   unit_of_measure:units_of_measure!inner(code, name),
@@ -118,6 +120,7 @@ const CATALOG_SELECTION_SELECT = `
     id,
     name,
     icon_key,
+    photo_path,
     family:families!inner(id, name, icon_key)
   ),
   unit_of_measure:units_of_measure!inner(code, name),

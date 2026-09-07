@@ -59,6 +59,75 @@ function loadProjectModule(relativePath, overrides = new Map(), cache = new Map(
   return loadedModule.exports;
 }
 
+test("private images reject anonymous and inactive sessions without accessing storage", async () => {
+  for (const [profile, status] of [[null, 401], [{ role: "user", is_active: false }, 403]]) {
+    const route = loadProjectModule("app/api/uploads/route.ts", new Map([
+      ["@/lib/auth/current-profile", { async getCurrentProfile() { return profile; } }],
+      ["@/lib/supabase/server", { createClient() { throw new Error("Storage must not be accessed"); } }],
+    ]));
+    const response = await route.GET(new Request("http://localhost/api/uploads?path=components%2F10000000-0000-4000-8000-000000000001.png"));
+    assert.equal(response.status, status);
+  }
+});
+
+test("private images validate paths and send authenticated content without shared caching", async () => {
+  const route = loadProjectModule("app/api/uploads/route.ts", new Map([
+    ["@/lib/auth/current-profile", { async getCurrentProfile() { return { role: "user", is_active: true }; } }],
+    ["@/lib/supabase/server", { async createClient() { return {
+      storage: { from(bucket) {
+        assert.equal(bucket, "uploads");
+        return { async download(path) {
+          assert.equal(path, "components/10000000-0000-4000-8000-000000000001.png");
+          return { data: new Blob(["photo"], { type: "image/png" }), error: null };
+        } };
+      } },
+    }; } }],
+  ]));
+  assert.equal((await route.GET(new Request("http://localhost/api/uploads?path=../../secret"))).status, 400);
+  const response = await route.GET(new Request("http://localhost/api/uploads?path=components%2F10000000-0000-4000-8000-000000000001.png"));
+  assert.equal(response.status, 200);
+  assert.equal(await response.text(), "photo");
+  assert.equal(response.headers.get("cache-control"), "private, no-store");
+  assert.equal(response.headers.get("content-type"), "image/png");
+});
+
+test("central upload service authorizes writes and uses immutable generated paths", async () => {
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aGZkAAAAASUVORK5CYII=", "base64");
+  let authorized = false;
+  const files = new Map();
+  const overrides = new Map([
+    ["server-only", {}],
+    ["../auth/current-profile.ts", { async requirePermission(permission) {
+      assert.equal(permission, "catalog:manage");
+      if (!authorized) throw new Error("Forbidden");
+    } }],
+    ["../supabase/server.ts", { async createClient() { return {
+      storage: { from(bucket) {
+        assert.equal(bucket, "uploads");
+        return {
+          async upload(path, bytes, options) {
+            assert.equal(options.upsert, false);
+            assert.equal(options.contentType, "image/png");
+            files.set(path, bytes);
+            return { error: null };
+          },
+          async remove(paths) { paths.forEach((path) => files.delete(path)); return { data: paths.map((name) => ({ name })), error: null }; },
+        };
+      } },
+    }; } }],
+  ]);
+  const service = loadProjectModule("lib/uploads/server.ts", overrides);
+  const file = new File([png], "../../user-supplied.png", { type: "image/png" });
+  await assert.rejects(service.uploadFile(file, "component-photo"), /Forbidden/);
+  assert.equal(files.size, 0);
+  authorized = true;
+  const path = await service.uploadFile(file, "component-photo");
+  assert.match(path, /^components\/[0-9a-f-]{36}\.png$/);
+  assert.deepEqual(Buffer.from(files.get(path)), png);
+  await service.removeUpload(path);
+  assert.equal(files.size, 0);
+});
+
 function validCategory(overrides = {}) {
   return {
     id: null,

@@ -1,3 +1,5 @@
+import { getUploadUrl } from "../uploads/policy.ts";
+
 export const CATALOG_ICON_KEYS = [
   "bolt",
   "boxes",
@@ -33,6 +35,7 @@ export type CatalogOption = {
   id: string;
   name: string;
   iconKey: CatalogIconKey;
+  photoUrl?: string | null;
 };
 
 export type CatalogFilters = {
@@ -272,7 +275,10 @@ function mapOption(
   const id = text(record.id);
   const name = text(record.name);
   return id && name
-    ? { id, name, iconKey: normalizeCatalogIconKey(record.icon_key, fallbackIconKey) }
+    ? {
+        id, name, iconKey: normalizeCatalogIconKey(record.icon_key, fallbackIconKey),
+        ...(record.photo_path ? { photoUrl: getUploadUrl(record.photo_path) } : {}),
+      }
     : null;
 }
 

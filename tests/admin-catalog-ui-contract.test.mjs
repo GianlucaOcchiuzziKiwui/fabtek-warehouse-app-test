@@ -32,6 +32,9 @@ function loadProjectModule(relativePath, overrides = new Map(), cache = new Map(
 
   function localRequire(specifier) {
     if (overrides.has(specifier)) return overrides.get(specifier);
+    if (specifier.startsWith(".")) {
+      return loadProjectModule(path.relative(projectRoot, path.resolve(path.dirname(filename), specifier)), overrides, cache);
+    }
     if (specifier.startsWith("@/")) {
       const resolved = path.resolve(projectRoot, specifier.slice(2));
       for (const extension of ["", ".ts", ".tsx"]) {
@@ -1157,6 +1160,51 @@ function findElement(node, predicate) {
   }
   return null;
 }
+
+test("central image field previews existing photos and does not accept files over 2 MB", () => {
+  const harness = createHookHarness();
+  const { ImageUploadField } = loadProjectModule("components/uploads/image-upload-field.tsx", new Map([["react", harness.react]]));
+  const changes = [];
+  const props = { id: "photo", purpose: "component-photo", currentUrl: "/api/uploads?path=photo", value: { file: null, remove: false }, onChange(value) { changes.push(value); } };
+  let rendered = harness.render(ImageUploadField, props);
+  const preview = findElement(rendered.tree, (element) => element.props.src === props.currentUrl);
+  assert.ok(preview);
+  assert.equal(preview.props.unoptimized, true);
+  const field = findElement(rendered.tree, (element) => element.props.type === "file");
+  assert.equal(field.props.accept, "image/jpeg,image/png");
+  const event = { target: { files: [new File([new Uint8Array(2097153)], "big.png", { type: "image/png" })], value: "big.png" } };
+  field.props.onChange(event);
+  rendered = harness.render(ImageUploadField, props);
+  const alert = findElement(rendered.tree, (element) => element.props.role === "alert");
+  assert.match(alert.props.children, /2 MB/);
+  assert.equal(changes.length, 0);
+  assert.equal(event.target.value, "");
+  const remove = findElement(rendered.tree, (element) => element.props.children === "Rimuovi foto");
+  remove.props.onClick();
+  assert.deepEqual(changes, [{ file: null, remove: true }]);
+});
+
+test("catalog component cards render the uploaded image and retain the icon without a photo", () => {
+  const { CatalogNavigation } = loadProjectModule("components/catalog/catalog-navigation.tsx");
+  const imageUrl = "/api/uploads?path=components%2F10000000-0000-4000-8000-000000000001.png";
+  const markup = renderToStaticMarkup(React.createElement(CatalogNavigation, {
+    basePath: "/catalogo",
+    filters: { categoryId: "category", familyId: "family" },
+    options: {
+      categories: [{ id: "category", name: "Gas", iconKey: "factory" }],
+      families: [{ id: "family", name: "Tubazioni", iconKey: "boxes" }],
+      components: [
+        { id: "photo", name: "Tubo con foto", iconKey: "component", photoUrl: imageUrl },
+        { id: "no-photo", name: "Tubo senza foto", iconKey: "component" },
+      ],
+    },
+    searchMatches: [],
+  }));
+  assert.match(markup, /alt="Foto Tubo con foto"/);
+  assert.ok(markup.includes(`src="${imageUrl}"`));
+  assert.match(markup, /data-catalog-icon="component"/);
+  assert.doesNotMatch(markup, /_next\/image/);
+});
 
 function createHookHarness() {
   const slots = [];

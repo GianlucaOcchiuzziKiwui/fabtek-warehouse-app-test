@@ -18,6 +18,7 @@ import {
 } from "@/components/admin/catalog/catalog-entity-dialog";
 import { CatalogVariantDialog } from "@/components/admin/catalog/catalog-variant-dialog";
 import { CatalogIcon } from "@/components/catalog/catalog-icon";
+import { CatalogPhoto } from "@/components/catalog/catalog-photo";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -142,7 +143,7 @@ function RowPrimary({ item }: { item: AdminCatalogRow }) {
     return (
       <div className="flex min-w-0 items-start gap-3">
         <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-          <CatalogIcon iconKey={item.iconKey} className="size-5" />
+          {item.photoUrl ? <CatalogPhoto src={item.photoUrl} name={item.name} className="size-10" /> : <CatalogIcon iconKey={item.iconKey} className="size-5" />}
         </span>
         <div className="min-w-0">
           <p className="break-words font-semibold text-foreground">{item.name}</p>
@@ -644,9 +645,9 @@ export function CatalogManagement({
           entity={editor.entity}
           families={editor.formOptions.families}
           blocked={mutationPending}
-          save={(input) => runLockedMutation(
+          save={(input, photo) => runLockedMutation(
             editor.entity?.id ?? `new-${editor.entityType}`,
-            () => saveActionFor(editor.entityType)(input),
+            () => saveActionFor(editor.entityType)(input, photo),
           )}
           saveFamily={(input) => runLockedMutation(
             "quick-family",
