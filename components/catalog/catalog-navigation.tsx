@@ -52,9 +52,9 @@ function CatalogTile({
     >
       <span
         data-catalog-tile-icon
-        className={`flex items-center justify-center bg-linear-to-br from-brand-navy to-brand-navy-deep text-white ${kind === "category" ? "h-24" : "h-20"}`}
+        className="flex h-32 items-center justify-center bg-linear-to-br from-brand-navy to-brand-navy-deep text-white sm:h-36"
       >
-        {photoUrl ? <CatalogPhoto src={photoUrl} name={title} className="h-full w-full rounded-none" /> : <CatalogIcon iconKey={iconKey} className={kind === "category" ? "size-11" : "size-9"} strokeWidth={1.7} />}
+        {photoUrl ? <CatalogPhoto src={photoUrl} name={title} className="h-full w-full rounded-none object-cover p-0" /> : <CatalogIcon iconKey={iconKey} className={kind === "category" ? "size-11" : "size-9"} strokeWidth={1.7} />}
       </span>
       <span className="flex min-h-18 items-center justify-between gap-3 px-3 py-3">
         <span className="min-w-0">
